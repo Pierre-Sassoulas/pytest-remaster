@@ -38,10 +38,11 @@ def pytest_addoption(parser: pytest.Parser) -> None:  # pragma: no cover
 @pytest.fixture  # pragma: no cover
 def remaster(request: pytest.FixtureRequest) -> bool:  # pragma: no cover
     """Whether tests should regenerate golden master files."""
-    cli = request.config.getoption("remaster")
+    cli: bool | None = request.config.getoption("remaster")
     if cli is not None:
         return cli
-    return request.config.getini("remaster-by-default")
+    result: bool = request.config.getini("remaster-by-default")
+    return result
 
 
 @pytest.fixture  # pragma: no cover

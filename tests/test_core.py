@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import pytest
 
-def test_check_match(pytester):
+
+def test_check_match(pytester: pytest.Pytester) -> None:
     """check() passes when actual matches expected."""
     pytester.makepyfile(
         """
@@ -19,7 +21,7 @@ def test_check_match(pytester):
     result.assert_outcomes(passed=1)
 
 
-def test_check_mismatch_remaster(pytester):
+def test_check_mismatch_remaster(pytester: pytest.Pytester) -> None:
     """check() with remaster writes new content and fails."""
     pytester.makepyfile(
         """
@@ -36,7 +38,7 @@ def test_check_mismatch_remaster(pytester):
     result.stdout.fnmatch_lines(["*updated*review and relaunch*"])
 
 
-def test_check_mismatch_no_remaster(pytester):
+def test_check_mismatch_no_remaster(pytester: pytest.Pytester) -> None:
     """check() without remaster fails with diff."""
     pytester.makepyfile(
         """
@@ -53,7 +55,7 @@ def test_check_mismatch_no_remaster(pytester):
     result.stdout.fnmatch_lines(["*mismatch*"])
 
 
-def test_check_missing_file_remaster(pytester):
+def test_check_missing_file_remaster(pytester: pytest.Pytester) -> None:
     """check() with remaster creates missing file and fails."""
     pytester.makepyfile(
         """
@@ -69,7 +71,7 @@ def test_check_missing_file_remaster(pytester):
     result.stdout.fnmatch_lines(["*created*review and relaunch*"])
 
 
-def test_check_missing_file_no_remaster(pytester):
+def test_check_missing_file_no_remaster(pytester: pytest.Pytester) -> None:
     """check() without remaster fails when file missing."""
     pytester.makepyfile(
         """
@@ -85,7 +87,7 @@ def test_check_missing_file_no_remaster(pytester):
     result.stdout.fnmatch_lines(["*does not exist*--remaster*"])
 
 
-def test_check_callable(pytester):
+def test_check_callable(pytester: pytest.Pytester) -> None:
     """check() accepts a callable and calls it."""
     pytester.makepyfile(
         """
@@ -101,7 +103,7 @@ def test_check_callable(pytester):
     result.assert_outcomes(passed=1)
 
 
-def test_check_serializer(pytester):
+def test_check_serializer(pytester: pytest.Pytester) -> None:
     """check() uses custom serializer."""
     pytester.makepyfile(
         """
@@ -121,7 +123,7 @@ def test_check_serializer(pytester):
     result.assert_outcomes(passed=1)
 
 
-def test_check_all_match(pytester):
+def test_check_all_match(pytester: pytest.Pytester) -> None:
     """check_all() passes when all results match."""
     pytester.makepyfile(
         """
@@ -137,7 +139,7 @@ def test_check_all_match(pytester):
     result.assert_outcomes(passed=1)
 
 
-def test_check_all_callable(pytester):
+def test_check_all_callable(pytester: pytest.Pytester) -> None:
     """check_all() accepts a callable returning a list."""
     pytester.makepyfile(
         """
@@ -153,7 +155,7 @@ def test_check_all_callable(pytester):
     result.assert_outcomes(passed=1)
 
 
-def test_check_all_fewer_actuals_remaster(pytester):
+def test_check_all_fewer_actuals_remaster(pytester: pytest.Pytester) -> None:
     """check_all() with remaster removes extra result files."""
     pytester.makepyfile(
         """
@@ -170,7 +172,7 @@ def test_check_all_fewer_actuals_remaster(pytester):
     result.assert_outcomes(passed=1)
 
 
-def test_check_all_more_actuals_remaster(pytester):
+def test_check_all_more_actuals_remaster(pytester: pytest.Pytester) -> None:
     """check_all() with remaster creates new result files."""
     pytester.makepyfile(
         """
@@ -186,7 +188,7 @@ def test_check_all_more_actuals_remaster(pytester):
     result.stdout.fnmatch_lines(["*created*"])
 
 
-def test_check_all_count_mismatch_no_remaster(pytester):
+def test_check_all_count_mismatch_no_remaster(pytester: pytest.Pytester) -> None:
     """check_all() without remaster fails on count mismatch."""
     pytester.makepyfile(
         """
@@ -204,7 +206,7 @@ def test_check_all_count_mismatch_no_remaster(pytester):
     result.stdout.fnmatch_lines(["*Expected 3 results but got 1*"])
 
 
-def test_discover_test_cases(pytester):
+def test_discover_test_cases(pytester: pytest.Pytester) -> None:
     """discover_test_cases() finds leaf directories."""
     pytester.makepyfile(
         """
@@ -229,7 +231,7 @@ def test_discover_test_cases(pytester):
     result.assert_outcomes(passed=1)
 
 
-def test_discover_test_files(pytester):
+def test_discover_test_files(pytester: pytest.Pytester) -> None:
     """discover_test_files() finds files matching a pattern."""
     pytester.makepyfile(
         """

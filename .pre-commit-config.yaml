@@ -20,6 +20,7 @@ repos:
     rev: v1.19.1
     hooks:
       - id: mypy
+        args: ["--strict"]
         additional_dependencies: [pytest>=7.0]
   - repo: https://github.com/rbubley/mirrors-prettier
     rev: v3.8.1
