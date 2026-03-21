@@ -1,27 +1,27 @@
 """Core golden master comparison and discovery logic."""
 
-from __future__ import annotations  # pragma: no cover
+from __future__ import annotations
 
-import contextlib  # pragma: no cover
-import difflib  # pragma: no cover
-import json  # pragma: no cover
-import re  # pragma: no cover
-from collections.abc import Callable, Generator  # pragma: no cover
-from dataclasses import dataclass  # pragma: no cover
-from pathlib import Path  # pragma: no cover
-from typing import Any  # pragma: no cover
-from unittest.mock import patch  # pragma: no cover
+import contextlib
+import difflib
+import json
+import re
+from collections.abc import Callable, Generator
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+from unittest.mock import patch
 
-import pytest  # pragma: no cover
+import pytest
 
 
-class GoldenMaster:  # pragma: no cover
+class GoldenMaster:
     """Golden master comparison with optional auto-regeneration."""
 
-    def __init__(self, remaster: bool) -> None:  # pragma: no cover
+    def __init__(self, remaster: bool) -> None:
         self._remaster = remaster
 
-    def check(  # pragma: no cover
+    def check(
         self,
         actual: Any | Callable[[], Any],
         expected_path: str | Path,
@@ -75,7 +75,7 @@ class GoldenMaster:  # pragma: no cover
                 pytrace=False,
             )
 
-    def check_all(  # pragma: no cover
+    def check_all(
         self,
         *actuals: Any | Callable[[], list[Any]],
         directory: str | Path,
@@ -119,7 +119,7 @@ class GoldenMaster:  # pragma: no cover
             )
 
 
-def discover_test_cases(  # pragma: no cover
+def discover_test_cases(
     base_dir: str | Path,
 ) -> list[Any]:
     """Find leaf directories (containing only files) under base_dir.
@@ -131,12 +131,10 @@ def discover_test_cases(  # pragma: no cover
     return _discover_test_cases_recursive(base_dir, base_dir)
 
 
-def _discover_test_cases_recursive(  # pragma: no cover
-    base_dir: Path, root: Path
-) -> list[Any]:
+def _discover_test_cases_recursive(base_dir: Path, root: Path) -> list[Any]:
     result: list[Any] = []
     for entry in sorted(base_dir.iterdir()):
-        if not entry.is_dir():  # pragma: no cover
+        if not entry.is_dir():
             continue
         if all(f.is_file() for f in entry.iterdir()):
             result.append(pytest.param(entry, id=str(entry.relative_to(root))))
@@ -145,9 +143,7 @@ def _discover_test_cases_recursive(  # pragma: no cover
     return result
 
 
-def discover_test_files(  # pragma: no cover
-    base_dir: str | Path, pattern: str = "*.py"
-) -> list[Any]:
+def discover_test_files(base_dir: str | Path, pattern: str = "*.py") -> list[Any]:
     """Find files matching a glob pattern under base_dir.
 
     Returns ``pytest.param(path, id=relative_path)`` for each matching file,
@@ -160,21 +156,21 @@ def discover_test_files(  # pragma: no cover
     ]
 
 
-@dataclass  # pragma: no cover
-class _FixtureSpec:  # pragma: no cover
+@dataclass
+class _FixtureSpec:
     filename: str
     target: str
     loader: Callable[[str], Any]
     default: Any
 
 
-class CaseFixtures:  # pragma: no cover
+class CaseFixtures:
     """Registry for loading fixture files from case directories and patching them in."""
 
-    def __init__(self) -> None:  # pragma: no cover
+    def __init__(self) -> None:
         self._specs: list[_FixtureSpec] = []
 
-    def register(  # pragma: no cover
+    def register(
         self,
         filename: str,
         *,
@@ -198,10 +194,8 @@ class CaseFixtures:  # pragma: no cover
             )
         )
 
-    @contextlib.contextmanager  # pragma: no cover
-    def apply(  # pragma: no cover
-        self, case_dir: str | Path
-    ) -> Generator[dict[str, Any]]:
+    @contextlib.contextmanager
+    def apply(self, case_dir: str | Path) -> Generator[dict[str, Any]]:
         """Context manager that loads fixtures and patches targets.
 
         Yields a dict mapping filename to loaded value for inspection.
