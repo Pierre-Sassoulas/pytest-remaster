@@ -2,7 +2,12 @@
 
 from __future__ import annotations  # pragma: no cover
 
+from typing import TYPE_CHECKING  # pragma: no cover
+
 import pytest  # pragma: no cover
+
+if TYPE_CHECKING:  # pragma: no cover
+    from pytest_remaster.core import GoldenMaster
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:  # pragma: no cover
@@ -37,3 +42,11 @@ def remaster(request: pytest.FixtureRequest) -> bool:  # pragma: no cover
     if cli is not None:
         return cli
     return request.config.getini("remaster-by-default")
+
+
+@pytest.fixture  # pragma: no cover
+def golden_master(remaster: bool) -> GoldenMaster:  # pragma: no cover
+    """Golden master comparison fixture."""
+    from pytest_remaster.core import GoldenMaster
+
+    return GoldenMaster(remaster=remaster)
