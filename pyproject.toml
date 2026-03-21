@@ -1,43 +1,38 @@
 [build-system]
-requires = ["setuptools>=77.0", "setuptools-scm>=8.0"]
 build-backend = "setuptools.build_meta"
+requires = [ "setuptools>=77", "setuptools-scm>=8" ]
 
 [project]
 name = "pytest-remaster"
-dynamic = ["version"]
 description = "Golden master testing for pytest with automatic regeneration."
 readme = "README.md"
 license = "MIT"
+authors = [ { name = "Pierre Sassoulas" } ]
 requires-python = ">=3.9"
-authors = [{ name = "Pierre Sassoulas" }]
 classifiers = [
-    "Development Status :: 3 - Alpha",
-    "Framework :: Pytest",
-    "Intended Audience :: Developers",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
-    "Topic :: Software Development :: Testing",
+  "Development Status :: 3 - Alpha",
+  "Framework :: Pytest",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Software Development :: Testing",
 ]
-dependencies = ["pytest>=7.0"]
-
-[project.optional-dependencies]
-dev = ["pre-commit", "pytest-cov"]
-
-[project.entry-points.pytest11]
-remaster = "pytest_remaster.plugin"
-
-[project.urls]
-Homepage = "https://github.com/Pierre-Sassoulas/pytest-remaster"
+dynamic = [ "version" ]
+dependencies = [ "pytest>=7" ]
+optional-dependencies.dev = [ "pre-commit", "pytest-cov" ]
+urls.Homepage = "https://github.com/Pierre-Sassoulas/pytest-remaster"
+entry-points.pytest11.remaster = "pytest_remaster.plugin"
 
 [tool.setuptools_scm]
 
-[tool.coverage.run]
-source = ["pytest_remaster"]
+[tool.pytest]
+ini_options.testpaths = [ "tests" ]
+ini_options.addopts = "--cov --cov-report=term-missing"
 
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-addopts = "--cov --cov-report=term-missing"
+[tool.coverage]
+run.source = [ "pytest_remaster" ]
