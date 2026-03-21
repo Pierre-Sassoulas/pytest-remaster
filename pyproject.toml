@@ -30,6 +30,39 @@ entry-points.pytest11.remaster = "pytest_remaster.plugin"
 
 [tool.setuptools_scm]
 
+[tool.ruff]
+target-version = "py310"
+line-length = 88
+lint.select = [
+  "B",      # bugbear
+  "D",      # pydocstyle
+  "E",      # pycodestyle
+  "F",      # pyflakes
+  "FURB",   # refurb
+  "I",      # isort
+  "PGH004", # pygrep-hooks - Use specific rule codes when using noqa
+  "PIE",    # flake8-pie
+  "PLC",    # pylint convention
+  "PLE",    # pylint error
+  "PLR",    # pylint refactor
+  "PLW",    # pylint warning
+  "PYI",    # flake8-pyi
+  "RUF",    # ruff
+  "UP",     # pyupgrade
+  "W",      # pycodestyle
+]
+lint.ignore = [
+  "D100",    # Missing docstring in public module
+  "D101",    # Missing docstring in public class
+  "D103",    # Missing docstring in public function
+  "D104",    # Missing docstring in public package
+  "D105",    # Missing docstring in magic method
+  "D107",    # Missing docstring in __init__
+  "D203",    # one-blank-line-before-class (incompatible with D211)
+  "D213",    # multi-line-summary-second-line (incompatible with D212)
+  "PLC0415", # import-outside-toplevel
+]
+
 [tool.pylint]
 messages_control.disable = [
   "magic-value-comparison",
