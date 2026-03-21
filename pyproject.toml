@@ -25,7 +25,7 @@ classifiers = [
 dependencies = ["pytest>=7.0"]
 
 [project.optional-dependencies]
-dev = ["pre-commit"]
+dev = ["pre-commit", "pytest-cov"]
 
 [project.entry-points.pytest11]
 remaster = "pytest_remaster.plugin"
@@ -35,5 +35,9 @@ Homepage = "https://github.com/Pierre-Sassoulas/pytest-remaster"
 
 [tool.setuptools_scm]
 
+[tool.coverage.run]
+source = ["pytest_remaster"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "--cov --cov-report=term-missing"
