@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=77.0", "setuptools-scm>=8.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pytest-remaster"
+dynamic = ["version"]
+description = "Golden master testing for pytest with automatic regeneration."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.9"
+authors = [{ name = "Pierre Sassoulas" }]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Framework :: Pytest",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Testing",
+]
+dependencies = ["pytest>=7.0"]
+
+[project.optional-dependencies]
+dev = ["pre-commit"]
+
+[project.entry-points.pytest11]
+remaster = "pytest_remaster.plugin"
+
+[project.urls]
+Homepage = "https://github.com/Pierre-Sassoulas/pytest-remaster"
+
+[tool.setuptools_scm]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
