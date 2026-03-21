@@ -16,6 +16,12 @@ class ChatMessage:
         return f"[{self.channel}] {prefix}{self.text}"
 
 
+def get_user_status(name: str) -> str:  # pylint: disable=unused-argument
+    """Look up user status from an external service."""
+    msg = "Should be mocked in tests"
+    raise NotImplementedError(msg)
+
+
 def handle_command(command: str) -> list[ChatMessage]:
     """Process a chat command and return response messages."""
     parts = command.split(maxsplit=1)
@@ -23,8 +29,10 @@ def handle_command(command: str) -> list[ChatMessage]:
     arg = parts[1] if len(parts) > 1 else ""
 
     if verb == "hello":
+        status = get_user_status(arg)  # pylint: disable=assignment-from-no-return
         return [
             ChatMessage(channel="#general", text=f"Hello, {arg}!", emoji=":wave:"),
+            ChatMessage(channel="#general", text=f"Status: {status}"),
         ]
     if verb == "goodbye":
         return [

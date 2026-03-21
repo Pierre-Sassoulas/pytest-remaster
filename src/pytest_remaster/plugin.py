@@ -49,6 +49,7 @@ def golden_master(
     remaster: bool,  # pylint: disable=redefined-outer-name
 ) -> GoldenMaster:  # pragma: no cover
     """Golden master comparison fixture."""
-    from pytest_remaster.core import GoldenMaster  # pylint: disable=import-outside-toplevel
+    # pylint: disable-next=import-outside-toplevel
+    from pytest_remaster.core import GoldenMaster
 
     return GoldenMaster(remaster=remaster)

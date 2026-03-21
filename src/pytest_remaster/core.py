@@ -2,11 +2,15 @@
 
 from __future__ import annotations  # pragma: no cover
 
+import contextlib  # pragma: no cover
 import difflib  # pragma: no cover
+import json  # pragma: no cover
 import re  # pragma: no cover
-from collections.abc import Callable  # pragma: no cover
+from collections.abc import Callable, Generator  # pragma: no cover
+from dataclasses import dataclass  # pragma: no cover
 from pathlib import Path  # pragma: no cover
 from typing import Any  # pragma: no cover
+from unittest.mock import patch  # pragma: no cover
 
 import pytest  # pragma: no cover
 
@@ -154,3 +158,73 @@ def discover_test_files(  # pragma: no cover
         pytest.param(p, id=str(p.relative_to(base_dir)))
         for p in sorted(base_dir.rglob(pattern))
     ]
+
+
+@dataclass  # pragma: no cover
+class _FixtureSpec:  # pragma: no cover
+    filename: str
+    target: str
+    loader: Callable[[str], Any]
+    default: Any
+
+
+class CaseFixtures:  # pragma: no cover
+    """Registry for loading fixture files from case directories and patching them in."""
+
+    def __init__(self) -> None:  # pragma: no cover
+        self._specs: list[_FixtureSpec] = []
+
+    def register(  # pragma: no cover
+        self,
+        filename: str,
+        *,
+        target: str,
+        loader: Callable[[str], Any] = json.loads,
+        default: Any = None,
+    ) -> None:
+        """Register a fixture file to be loaded and patched.
+
+        Args:
+            filename: Name of the file in the case directory.
+            target: Dotted path for ``unittest.mock.patch`` (e.g. "myapp.api.call").
+            loader: Callable that takes file content (str) and returns the value.
+                    Default: ``json.loads``.
+            default: Value to use when the file is not present in the case directory.
+
+        """
+        self._specs.append(
+            _FixtureSpec(
+                filename=filename, target=target, loader=loader, default=default
+            )
+        )
+
+    @contextlib.contextmanager  # pragma: no cover
+    def apply(  # pragma: no cover
+        self, case_dir: str | Path
+    ) -> Generator[dict[str, Any]]:
+        """Context manager that loads fixtures and patches targets.
+
+        Yields a dict mapping filename to loaded value for inspection.
+        """
+        case_dir = Path(case_dir)
+        loaded: dict[str, Any] = {}
+        patches: list[Any] = []
+
+        for spec in self._specs:
+            filepath = case_dir / spec.filename
+            if filepath.exists():
+                content = filepath.read_text(encoding="utf-8")
+                value = spec.loader(content)
+            else:
+                value = spec.default
+            loaded[spec.filename] = value
+            p = patch(spec.target, return_value=value)
+            patches.append(p)
+
+        for p in patches:
+            p.start()
+        try:
+            yield loaded
+        finally:
+            for p in patches:
+                p.stop()

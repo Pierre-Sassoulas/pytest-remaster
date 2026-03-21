@@ -259,3 +259,128 @@ def test_discover_test_files(pytester: pytest.Pytester) -> None:
     )
     result = pytester.runpytest()
     result.assert_outcomes(passed=1)
+
+
+def test_case_fixtures_loads_and_patches(pytester: pytest.Pytester) -> None:
+    """CaseFixtures loads JSON files and patches targets."""
+    pytester.makepyfile(
+        mymodule="""
+        def get_data():
+            raise NotImplementedError
+        """,
+    )
+    pytester.makepyfile(
+        """
+        from pathlib import Path
+        from pytest_remaster import CaseFixtures
+
+        def test_fixtures(tmp_path):
+            (tmp_path / "data.json").write_text('{"key": "value"}')
+
+            fixtures = CaseFixtures()
+            fixtures.register("data.json", target="mymodule.get_data")
+
+            with fixtures.apply(tmp_path) as loaded:
+                import mymodule
+                assert mymodule.get_data() == {"key": "value"}
+                assert loaded["data.json"] == {"key": "value"}
+        """,
+    )
+    result = pytester.runpytest()
+    result.assert_outcomes(passed=1)
+
+
+def test_case_fixtures_uses_default(pytester: pytest.Pytester) -> None:
+    """CaseFixtures uses default when file is missing."""
+    pytester.makepyfile(
+        mymodule="""
+        def get_data():
+            raise NotImplementedError
+        """,
+    )
+    pytester.makepyfile(
+        """
+        from pathlib import Path
+        from pytest_remaster import CaseFixtures
+
+        def test_default(tmp_path):
+            fixtures = CaseFixtures()
+            fixtures.register("missing.json", target="mymodule.get_data", default=[])
+
+            with fixtures.apply(tmp_path) as loaded:
+                import mymodule
+                assert mymodule.get_data() == []
+                assert loaded["missing.json"] == []
+        """,
+    )
+    result = pytester.runpytest()
+    result.assert_outcomes(passed=1)
+
+
+def test_case_fixtures_custom_loader(pytester: pytest.Pytester) -> None:
+    """CaseFixtures supports custom loaders."""
+    pytester.makepyfile(
+        mymodule="""
+        def get_text():
+            raise NotImplementedError
+        """,
+    )
+    pytester.makepyfile(
+        """
+        from pathlib import Path
+        from pytest_remaster import CaseFixtures
+
+        def test_loader(tmp_path):
+            (tmp_path / "input.txt").write_text("hello world")
+
+            fixtures = CaseFixtures()
+            fixtures.register(
+                "input.txt",
+                target="mymodule.get_text",
+                loader=lambda s: s.strip().upper(),
+            )
+
+            with fixtures.apply(tmp_path) as loaded:
+                import mymodule
+                assert mymodule.get_text() == "HELLO WORLD"
+                assert loaded["input.txt"] == "HELLO WORLD"
+        """,
+    )
+    result = pytester.runpytest()
+    result.assert_outcomes(passed=1)
+
+
+def test_case_fixtures_multiple(pytester: pytest.Pytester) -> None:
+    """CaseFixtures handles multiple registered fixtures."""
+    pytester.makepyfile(
+        mod_a="""
+        def call_a():
+            raise NotImplementedError
+        """,
+        mod_b="""
+        def call_b():
+            raise NotImplementedError
+        """,
+    )
+    pytester.makepyfile(
+        """
+        from pathlib import Path
+        from pytest_remaster import CaseFixtures
+
+        def test_multi(tmp_path):
+            (tmp_path / "a.json").write_text('"alpha"')
+
+            fixtures = CaseFixtures()
+            fixtures.register("a.json", target="mod_a.call_a")
+            fixtures.register("b.json", target="mod_b.call_b", default="beta")
+
+            with fixtures.apply(tmp_path) as loaded:
+                import mod_a, mod_b
+                assert mod_a.call_a() == "alpha"
+                assert mod_b.call_b() == "beta"
+                assert loaded["a.json"] == "alpha"
+                assert loaded["b.json"] == "beta"
+        """,
+    )
+    result = pytester.runpytest()
+    result.assert_outcomes(passed=1)
