@@ -38,16 +38,17 @@ def pytest_addoption(parser: pytest.Parser) -> None:  # pragma: no cover
 @pytest.fixture  # pragma: no cover
 def remaster(request: pytest.FixtureRequest) -> bool:  # pragma: no cover
     """Whether tests should regenerate golden master files."""
-    cli: bool | None = request.config.getoption("remaster")
-    if cli is not None:
-        return cli
+    if (cli := request.config.getoption("remaster")) is not None:
+        return bool(cli)
     result: bool = request.config.getini("remaster-by-default")
     return result
 
 
 @pytest.fixture  # pragma: no cover
-def golden_master(remaster: bool) -> GoldenMaster:  # pragma: no cover
+def golden_master(
+    remaster: bool,  # pylint: disable=redefined-outer-name
+) -> GoldenMaster:  # pragma: no cover
     """Golden master comparison fixture."""
-    from pytest_remaster.core import GoldenMaster
+    from pytest_remaster.core import GoldenMaster  # pylint: disable=import-outside-toplevel
 
     return GoldenMaster(remaster=remaster)

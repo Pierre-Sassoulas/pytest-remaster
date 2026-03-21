@@ -24,11 +24,18 @@ classifiers = [
 ]
 dynamic = [ "version" ]
 dependencies = [ "pytest>=7" ]
-optional-dependencies.dev = [ "pre-commit", "pytest-cov" ]
+optional-dependencies.dev = [ "pre-commit", "pylint>4", "pytest-cov" ]
 urls.Homepage = "https://github.com/Pierre-Sassoulas/pytest-remaster"
 entry-points.pytest11.remaster = "pytest_remaster.plugin"
 
 [tool.setuptools_scm]
+
+[tool.pylint]
+messages_control.disable = [
+  "magic-value-comparison",
+  "missing-docstring",
+  "duplicate-code",
+]
 
 [tool.pytest]
 ini_options.testpaths = [ "tests" ]
