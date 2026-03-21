@@ -223,8 +223,12 @@ def test_discover_test_cases(pytester: pytest.Pytester) -> None:
             (tmp_path / "b" / "command").write_text("help")
 
             cases = discover_test_cases(tmp_path)
-            names = [c.name for c in cases]
+            # Returns pytest.param objects; extract the path from .values[0]
+            names = [c.values[0].name for c in cases]
             assert sorted(names) == ["b", "case1", "case2"]
+            # IDs are relative paths
+            ids = [c.id for c in cases]
+            assert sorted(ids) == ["a/case1", "a/case2", "b"]
         """
     )
     result = pytester.runpytest()
@@ -245,8 +249,12 @@ def test_discover_test_files(pytester: pytest.Pytester) -> None:
             (tmp_path / "sub" / "c.py").write_text("pass")
 
             py_files = discover_test_files(tmp_path, "*.py")
-            names = [f.name for f in py_files]
+            # Returns pytest.param objects; extract the path from .values[0]
+            names = [p.values[0].name for p in py_files]
             assert sorted(names) == ["a.py", "c.py"]
+            # IDs are relative paths
+            ids = [p.id for p in py_files]
+            assert sorted(ids) == ["a.py", "sub/c.py"]
         """
     )
     result = pytester.runpytest()

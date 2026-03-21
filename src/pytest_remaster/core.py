@@ -29,6 +29,7 @@ class GoldenMaster:  # pragma: no cover
             actual: The actual value, or a callable that produces it.
             expected_path: Path to the expected output file.
             serializer: Converts actual value to string. Default: str().
+
         """
         expected_path = Path(expected_path)
         if callable(actual) and not isinstance(actual, str):
@@ -82,6 +83,7 @@ class GoldenMaster:  # pragma: no cover
             *actuals: Values to compare, or a single callable returning a list.
             directory: Directory containing result_N files.
             serializer: Converts each value to string. Default: str().
+
         """
         directory = Path(directory)
 
@@ -113,31 +115,42 @@ class GoldenMaster:  # pragma: no cover
             )
 
 
-def discover_test_cases(base_dir: str | Path) -> list[Path]:  # pragma: no cover
+def discover_test_cases(  # pragma: no cover
+    base_dir: str | Path,
+) -> list[Any]:
     """Find leaf directories (containing only files) under base_dir.
 
-    Suitable for use with ``@pytest.mark.parametrize``.
-    Returns absolute paths sorted alphabetically.
+    Returns ``pytest.param(path, id=relative_path)`` for each leaf directory,
+    ready to use with ``@pytest.mark.parametrize``.
     """
     base_dir = Path(base_dir)
-    result: list[Path] = []
+    return _discover_test_cases_recursive(base_dir, base_dir)
+
+
+def _discover_test_cases_recursive(  # pragma: no cover
+    base_dir: Path, root: Path
+) -> list[Any]:
+    result: list[Any] = []
     for entry in sorted(base_dir.iterdir()):
         if not entry.is_dir():  # pragma: no cover
             continue
         if all(f.is_file() for f in entry.iterdir()):
-            result.append(entry)
+            result.append(pytest.param(entry, id=str(entry.relative_to(root))))
         else:
-            result.extend(discover_test_cases(entry))
+            result.extend(_discover_test_cases_recursive(entry, root))
     return result
 
 
-def discover_test_files(
+def discover_test_files(  # pragma: no cover
     base_dir: str | Path, pattern: str = "*.py"
-) -> list[Path]:  # pragma: no cover
+) -> list[Any]:
     """Find files matching a glob pattern under base_dir.
 
-    Suitable for use with ``@pytest.mark.parametrize``.
-    Returns absolute paths sorted alphabetically.
+    Returns ``pytest.param(path, id=relative_path)`` for each matching file,
+    ready to use with ``@pytest.mark.parametrize``.
     """
     base_dir = Path(base_dir)
-    return sorted(base_dir.rglob(pattern))
+    return [
+        pytest.param(p, id=str(p.relative_to(base_dir)))
+        for p in sorted(base_dir.rglob(pattern))
+    ]
