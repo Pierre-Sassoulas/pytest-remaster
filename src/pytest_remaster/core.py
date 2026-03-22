@@ -116,7 +116,8 @@ class GoldenMaster:
                 return
 
         if self._remaster:
-            self._remaster_file(actual_str, expected_str, expected_path)
+            write_str = normalizer(actual_str) if normalizer else actual_str
+            self._remaster_file(write_str, expected_str, expected_path)
         else:
             self._fail_mismatch(actual_str, expected_str, expected_path)
 
