@@ -104,6 +104,10 @@ class GoldenMaster:
         except FileNotFoundError:
             expected_str = None
 
+        # Both empty and no file: nothing to check
+        if not actual_str and expected_str is None:
+            return
+
         if expected_str is not None:
             actual_cmp = normalizer(actual_str) if normalizer else actual_str
             expected_cmp = normalizer(expected_str) if normalizer else expected_str
@@ -111,27 +115,43 @@ class GoldenMaster:
                 return
 
         if self._remaster:
+            self._remaster_file(actual_str, expected_str, expected_path)
+        else:
+            self._fail_mismatch(actual_str, expected_str, expected_path)
+
+    def _remaster_file(
+        self, actual_str: str, expected_str: str | None, expected_path: Path
+    ) -> None:
+        if not actual_str:
+            expected_path.unlink(missing_ok=True)
+            if expected_str is not None:
+                self._updated.append(f"deleted: {expected_path}")
+        else:
             expected_path.parent.mkdir(parents=True, exist_ok=True)
             expected_path.write_text(actual_str + "\n", encoding="utf-8")
             action = "created" if expected_str is None else "updated"
             self._updated.append(f"{action}: {expected_path}")
-        else:
-            if expected_str is None:
-                pytest.fail(
-                    f"Expected file {expected_path} does not exist. "
-                    f"Run with --remaster to create it.",
-                    pytrace=False,
-                )
-            diff = difflib.unified_diff(
-                expected_str.splitlines(keepends=True),
-                actual_str.splitlines(keepends=True),
-                fromfile=str(expected_path),
-                tofile="actual",
-            )
+
+    @staticmethod
+    def _fail_mismatch(
+        actual_str: str, expected_str: str | None, expected_path: Path
+    ) -> None:
+        if expected_str is None:
             pytest.fail(
-                f"Mismatch at {expected_path}:\n{''.join(diff)}",
+                f"Expected file {expected_path} does not exist. "
+                f"Run with --remaster to create it.",
                 pytrace=False,
             )
+        diff = difflib.unified_diff(
+            expected_str.splitlines(keepends=True),
+            actual_str.splitlines(keepends=True),
+            fromfile=str(expected_path),
+            tofile="actual",
+        )
+        pytest.fail(
+            f"Mismatch at {expected_path}:\n{''.join(diff)}",
+            pytrace=False,
+        )
 
     def check_all(
         self,

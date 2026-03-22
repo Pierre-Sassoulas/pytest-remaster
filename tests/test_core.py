@@ -92,6 +92,40 @@ def test_check_missing_file_remaster(pytester: pytest.Pytester) -> None:
     result.stdout.fnmatch_lines(["*please review*", "*created*"])
 
 
+def test_check_empty_actual_deletes_file(pytester: pytest.Pytester) -> None:
+    """check() with remaster deletes expected file when actual is empty."""
+    pytester.makepyfile(
+        """
+        from pathlib import Path
+
+        def test_delete(golden_master, tmp_path):
+            expected = tmp_path / "expected.txt"
+            expected.write_text("old content\\n")
+            golden_master.check("", expected)
+            # File should be deleted after teardown triggers
+            assert not expected.exists()
+        """
+    )
+    result = pytester.runpytest("--remaster")
+    result.assert_outcomes(passed=1, errors=1)
+    result.stdout.fnmatch_lines(["*deleted*"])
+
+
+def test_check_empty_actual_no_file(pytester: pytest.Pytester) -> None:
+    """check() passes when actual is empty and no expected file exists."""
+    pytester.makepyfile(
+        """
+        from pathlib import Path
+
+        def test_both_empty(golden_master, tmp_path):
+            expected = tmp_path / "expected.txt"
+            golden_master.check("", expected)
+        """
+    )
+    result = pytester.runpytest("--no-remaster")
+    result.assert_outcomes(passed=1)
+
+
 def test_check_missing_file_no_remaster(pytester: pytest.Pytester) -> None:
     """check() without remaster fails when file missing."""
     pytester.makepyfile(
