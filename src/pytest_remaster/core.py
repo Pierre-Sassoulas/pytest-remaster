@@ -277,6 +277,8 @@ class FilePatchRegistry:
             attr: Attribute path on the mock to set the loaded value on.
                     Default: ``"return_value"``. Use dotted paths for nested
                     attributes (e.g. ``"return_value.json.side_effect"``).
+                    Use ``"new"`` to replace the target directly with the
+                    loaded value (for constants, not callables).
             loader: Callable that takes file content (str) and returns the value.
                     Default: ``json.loads``.
             default: Value to use when the file is not present in the case directory.
@@ -315,6 +317,40 @@ class FilePatchRegistry:
         self._post_load_hooks.append(func)
         return func
 
+    def _load_files(self, case_dir: Path) -> dict[str, Any]:
+        loaded: dict[str, Any] = {}
+        for spec in self._specs:
+            filepath = case_dir / spec.filename
+            if filepath.exists():
+                content = filepath.read_text(encoding="utf-8")
+                loaded[spec.filename] = spec.loader(content)
+            else:
+                loaded[spec.filename] = spec.default
+        for hook in self._post_load_hooks:
+            hook(loaded, case_dir)
+        return loaded
+
+    def _create_patches(self, loaded: dict[str, Any]) -> list[Any]:
+        target_mocks: dict[str, Any] = {}
+        active_patches: list[Any] = []
+        for spec in self._specs:
+            if spec.target is None:
+                continue
+            value = loaded[spec.filename]
+            if spec.attr == "new":
+                if not (spec.skip_if_falsy and not value):
+                    p = patch(spec.target, new=value)
+                    p.start()
+                    active_patches.append(p)
+                continue
+            if spec.target not in target_mocks:
+                p = patch(spec.target)
+                target_mocks[spec.target] = p.start()
+                active_patches.append(p)
+            if not (spec.skip_if_falsy and not value):
+                _set_nested_attr(target_mocks[spec.target], spec.attr, value)
+        return active_patches
+
     @contextlib.contextmanager
     def mock(self, case_dir: str | Path | CaseData) -> Generator[dict[str, Any]]:
         """Load fixture files and activate patches.
@@ -324,42 +360,8 @@ class FilePatchRegistry:
         if isinstance(case_dir, CaseData):
             case_dir = case_dir.input
         case_dir = Path(case_dir)
-        loaded: dict[str, Any] = {}
-        # Group specs by target so we patch each target only once
-        target_mocks: dict[str, Any] = {}
-        active_patches: list[Any] = []
-
-        # First pass: load all files
-        for spec in self._specs:
-            filepath = case_dir / spec.filename
-            if filepath.exists():
-                content = filepath.read_text(encoding="utf-8")
-                value = spec.loader(content)
-            else:
-                value = spec.default
-            loaded[spec.filename] = value
-
-        # Run post-load hooks (can enrich loaded with derived values)
-        for hook in self._post_load_hooks:
-            hook(loaded, case_dir)
-
-        # Second pass: create patches (one per unique target)
-        for spec in self._specs:
-            if spec.target is None:
-                continue
-            if spec.target not in target_mocks:
-                p = patch(spec.target)
-                mock_obj = p.start()
-                active_patches.append(p)
-                target_mocks[spec.target] = mock_obj
-            # skip_if_falsy: still patch the target (blocks real calls)
-            # but don't configure the attr
-            if spec.skip_if_falsy and not loaded[spec.filename]:
-                continue
-            _set_nested_attr(
-                target_mocks[spec.target], spec.attr, loaded[spec.filename]
-            )
-
+        loaded = self._load_files(case_dir)
+        active_patches = self._create_patches(loaded)
         try:
             yield loaded
         finally:

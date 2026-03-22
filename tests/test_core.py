@@ -689,3 +689,33 @@ def test_file_patch_registry_post_load_case_dir(pytester: pytest.Pytester) -> No
     )
     result = pytester.runpytest()
     result.assert_outcomes(passed=1)
+
+
+def test_file_patch_registry_attr_new(pytester: pytest.Pytester) -> None:
+    """attr='new' replaces the target directly (for constants)."""
+    pytester.makepyfile(
+        mymodule="""
+        MAX_LENGTH = 9999
+        """,
+    )
+    pytester.makepyfile(
+        """
+        from pytest_remaster import FilePatchRegistry
+
+        patcher = FilePatchRegistry()
+        patcher.register(
+            "max_length.json",
+            target="mymodule.MAX_LENGTH",
+            attr="new",
+        )
+
+        def test_constant(tmp_path):
+            (tmp_path / "max_length.json").write_text("420")
+            with patcher.mock(tmp_path) as loaded:
+                import mymodule
+                assert mymodule.MAX_LENGTH == 420
+                assert loaded["max_length.json"] == 420
+        """,
+    )
+    result = pytester.runpytest()
+    result.assert_outcomes(passed=1)
