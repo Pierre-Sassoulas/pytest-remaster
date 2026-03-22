@@ -608,3 +608,58 @@ def test_file_patch_registry_skip_if_falsy(pytester: pytest.Pytester) -> None:
     )
     result = pytester.runpytest()
     result.assert_outcomes(passed=1)
+
+
+def test_file_patch_registry_post_load(pytester: pytest.Pytester) -> None:
+    """post_load hooks can derive values from multiple loaded files."""
+    pytester.makepyfile(
+        """
+        from pytest_remaster import FilePatchRegistry
+
+        patcher = FilePatchRegistry()
+        patcher.register("name.json")
+        patcher.register("greeting.json")
+
+        @patcher.post_load
+        def _build_message(loaded):
+            loaded["message"] = f"{loaded['greeting.json']} {loaded['name.json']}!"
+
+        def test_post_load(tmp_path):
+            (tmp_path / "name.json").write_text('"Alice"')
+            (tmp_path / "greeting.json").write_text('"Hello"')
+            with patcher.mock(tmp_path) as loaded:
+                assert loaded["name.json"] == "Alice"
+                assert loaded["greeting.json"] == "Hello"
+                assert loaded["message"] == "Hello Alice!"
+        """,
+    )
+    result = pytester.runpytest()
+    result.assert_outcomes(passed=1)
+
+
+def test_file_patch_registry_multiple_post_load(pytester: pytest.Pytester) -> None:
+    """Multiple post_load hooks run in registration order."""
+    pytester.makepyfile(
+        """
+        from pytest_remaster import FilePatchRegistry
+
+        patcher = FilePatchRegistry()
+        patcher.register("data.json")
+
+        @patcher.post_load
+        def _step1(loaded):
+            loaded["step1"] = loaded["data.json"] * 2
+
+        @patcher.post_load
+        def _step2(loaded):
+            loaded["step2"] = loaded["step1"] + 1
+
+        def test_chain(tmp_path):
+            (tmp_path / "data.json").write_text("5")
+            with patcher.mock(tmp_path) as loaded:
+                assert loaded["step1"] == 10
+                assert loaded["step2"] == 11
+        """,
+    )
+    result = pytester.runpytest()
+    result.assert_outcomes(passed=1)

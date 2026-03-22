@@ -256,6 +256,7 @@ class FilePatchRegistry:
 
     def __init__(self) -> None:
         self._specs: list[_FixtureSpec] = []
+        self._post_load_hooks: list[Callable[[dict[str, Any]], None]] = []
 
     def register(  # pylint: disable=too-many-arguments
         self,
@@ -295,6 +296,23 @@ class FilePatchRegistry:
             )
         )
 
+    def post_load(
+        self, func: Callable[[dict[str, Any]], None]
+    ) -> Callable[[dict[str, Any]], None]:
+        """Register a hook that runs after all files are loaded, before patching.
+
+        The hook receives the loaded dict and can add derived values to it.
+
+        Usage::
+
+            @patcher.post_load
+            def _build_fixtures(loaded):
+                loaded["derived"] = transform(loaded["file.json"])
+
+        """
+        self._post_load_hooks.append(func)
+        return func
+
     @contextlib.contextmanager
     def mock(self, case_dir: str | Path | CaseData) -> Generator[dict[str, Any]]:
         """Load fixture files and activate patches.
@@ -318,6 +336,10 @@ class FilePatchRegistry:
             else:
                 value = spec.default
             loaded[spec.filename] = value
+
+        # Run post-load hooks (can enrich loaded with derived values)
+        for hook in self._post_load_hooks:
+            hook(loaded)
 
         # Second pass: create patches (one per unique target)
         for spec in self._specs:
