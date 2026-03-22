@@ -34,8 +34,29 @@ def test_check_mismatch_remaster(pytester: pytest.Pytester) -> None:
         """
     )
     result = pytester.runpytest("--remaster")
-    result.assert_outcomes(failed=1)
-    result.stdout.fnmatch_lines(["*updated*review and relaunch*"])
+    result.assert_outcomes(passed=1, errors=1)
+    result.stdout.fnmatch_lines(["*updated*please review*"])
+
+
+def test_check_multiple_remaster(pytester: pytest.Pytester) -> None:
+    """Multiple check() calls in remaster mode update all files in one pass."""
+    pytester.makepyfile(
+        """
+        from pathlib import Path
+
+        def test_multi(golden_master, tmp_path):
+            a = tmp_path / "a.txt"
+            b = tmp_path / "b.txt"
+            a.write_text("old a\\n")
+            b.write_text("old b\\n")
+            golden_master.check("new a", a)
+            golden_master.check("new b", b)
+        """
+    )
+    result = pytester.runpytest("--remaster")
+    result.assert_outcomes(passed=1, errors=1)
+    # Both files updated in a single failure
+    result.stdout.fnmatch_lines(["*updated*a.txt*", "*updated*b.txt*"])
 
 
 def test_check_mismatch_no_remaster(pytester: pytest.Pytester) -> None:
@@ -67,8 +88,8 @@ def test_check_missing_file_remaster(pytester: pytest.Pytester) -> None:
         """
     )
     result = pytester.runpytest("--remaster")
-    result.assert_outcomes(failed=1)
-    result.stdout.fnmatch_lines(["*created*review and relaunch*"])
+    result.assert_outcomes(passed=1, errors=1)
+    result.stdout.fnmatch_lines(["*please review*", "*created*"])
 
 
 def test_check_missing_file_no_remaster(pytester: pytest.Pytester) -> None:
@@ -103,6 +124,68 @@ def test_check_callable(pytester: pytest.Pytester) -> None:
     result.assert_outcomes(passed=1)
 
 
+def test_check_json_normalizer(pytester: pytest.Pytester) -> None:
+    """json_normalizer ignores formatting differences in JSON files."""
+    pytester.makepyfile(
+        """
+        import json
+        from pathlib import Path
+        from pytest_remaster import json_normalizer
+
+        def test_json_norm(golden_master, tmp_path):
+            # prettier-style: compact, no trailing newline
+            expected = tmp_path / "data.json"
+            expected.write_text('{ "b": 2, "a": [1, 2, 3] }\\n')
+            # json.dumps style: different formatting, different key order
+            actual = json.dumps({"a": [1, 2, 3], "b": 2}, indent=4)
+            golden_master.check(actual, expected, normalizer=json_normalizer)
+        """
+    )
+    result = pytester.runpytest("--no-remaster")
+    result.assert_outcomes(passed=1)
+
+
+def test_check_whitespace_normalizer(pytester: pytest.Pytester) -> None:
+    """whitespace_normalizer ignores trailing whitespace and line endings."""
+    pytester.makepyfile(
+        """
+        from pathlib import Path
+        from pytest_remaster import whitespace_normalizer
+
+        def test_ws(golden_master, tmp_path):
+            expected = tmp_path / "output.txt"
+            expected.write_text("hello  \\r\\nworld  \\n")
+            golden_master.check(
+                "hello\\nworld",
+                expected,
+                normalizer=whitespace_normalizer,
+            )
+        """
+    )
+    result = pytester.runpytest("--no-remaster")
+    result.assert_outcomes(passed=1)
+
+
+def test_check_normalizer_explicit(pytester: pytest.Pytester) -> None:
+    """check() accepts an explicit normalizer."""
+    pytester.makepyfile(
+        """
+        from pathlib import Path
+
+        def test_normalizer(golden_master, tmp_path):
+            expected = tmp_path / "output.txt"
+            expected.write_text("  HELLO  WORLD  \\n")
+            golden_master.check(
+                "hello world",
+                expected,
+                normalizer=lambda s: " ".join(s.lower().split()),
+            )
+        """
+    )
+    result = pytester.runpytest("--no-remaster")
+    result.assert_outcomes(passed=1)
+
+
 def test_check_serializer(pytester: pytest.Pytester) -> None:
     """check() uses custom serializer."""
     pytester.makepyfile(
@@ -123,82 +206,100 @@ def test_check_serializer(pytester: pytest.Pytester) -> None:
     result.assert_outcomes(passed=1)
 
 
-def test_check_all_match(pytester: pytest.Pytester) -> None:
+def test_check_directory_match(pytester: pytest.Pytester) -> None:
     """check_all() passes when all results match."""
     pytester.makepyfile(
         """
         from pathlib import Path
 
         def test_match(golden_master, tmp_path):
-            (tmp_path / "result_0").write_text("first\\n")
-            (tmp_path / "result_1").write_text("second\\n")
-            golden_master.check_all("first", "second", directory=tmp_path)
+            (tmp_path / "expected_0").write_text("first\\n")
+            (tmp_path / "expected_1").write_text("second\\n")
+            golden_master.check_all(["first", "second"], tmp_path)
         """
     )
     result = pytester.runpytest("--no-remaster")
     result.assert_outcomes(passed=1)
 
 
-def test_check_all_callable(pytester: pytest.Pytester) -> None:
+def test_check_directory_with_suffix(pytester: pytest.Pytester) -> None:
+    """check_all() with suffix uses expected_0.json, etc."""
+    pytester.makepyfile(
+        """
+        from pathlib import Path
+
+        def test_suffix(golden_master, tmp_path):
+            (tmp_path / "expected_0.json").write_text('{"a": 1}\\n')
+            (tmp_path / "expected_1.json").write_text('{"b": 2}\\n')
+            golden_master.check_all(
+                ['{"a": 1}', '{"b": 2}'], tmp_path, suffix=".json"
+            )
+        """
+    )
+    result = pytester.runpytest("--no-remaster")
+    result.assert_outcomes(passed=1)
+
+
+def test_check_directory_callable(pytester: pytest.Pytester) -> None:
     """check_all() accepts a callable returning a list."""
     pytester.makepyfile(
         """
         from pathlib import Path
 
         def test_callable(golden_master, tmp_path):
-            (tmp_path / "result_0").write_text("a\\n")
-            (tmp_path / "result_1").write_text("b\\n")
-            golden_master.check_all(lambda: ["a", "b"], directory=tmp_path)
+            (tmp_path / "expected_0").write_text("a\\n")
+            (tmp_path / "expected_1").write_text("b\\n")
+            golden_master.check_all(lambda: ["a", "b"], tmp_path)
         """
     )
     result = pytester.runpytest("--no-remaster")
     result.assert_outcomes(passed=1)
 
 
-def test_check_all_fewer_actuals_remaster(pytester: pytest.Pytester) -> None:
-    """check_all() with remaster removes extra result files."""
+def test_check_directory_fewer_actuals_remaster(pytester: pytest.Pytester) -> None:
+    """check_all() with remaster removes extra expected files."""
     pytester.makepyfile(
         """
         from pathlib import Path
 
         def test_fewer(golden_master, tmp_path):
-            (tmp_path / "result_0").write_text("only\\n")
-            (tmp_path / "result_1").write_text("extra\\n")
-            golden_master.check_all("only", directory=tmp_path)
+            (tmp_path / "expected_0").write_text("only\\n")
+            (tmp_path / "expected_1").write_text("extra\\n")
+            golden_master.check_all(["only"], tmp_path)
         """
     )
     result = pytester.runpytest("--remaster")
-    # result_1 is removed, result_0 matches so no update needed
+    # expected_1 is removed, expected_0 matches so no update needed
     result.assert_outcomes(passed=1)
 
 
-def test_check_all_more_actuals_remaster(pytester: pytest.Pytester) -> None:
-    """check_all() with remaster creates new result files."""
+def test_check_directory_more_actuals_remaster(pytester: pytest.Pytester) -> None:
+    """check_all() with remaster creates new expected files."""
     pytester.makepyfile(
         """
         from pathlib import Path
 
         def test_more(golden_master, tmp_path):
-            (tmp_path / "result_0").write_text("first\\n")
-            golden_master.check_all("first", "second", directory=tmp_path)
+            (tmp_path / "expected_0").write_text("first\\n")
+            golden_master.check_all(["first", "second"], tmp_path)
         """
     )
     result = pytester.runpytest("--remaster")
-    result.assert_outcomes(failed=1)
+    result.assert_outcomes(passed=1, errors=1)
     result.stdout.fnmatch_lines(["*created*"])
 
 
-def test_check_all_count_mismatch_no_remaster(pytester: pytest.Pytester) -> None:
+def test_check_directory_count_mismatch_no_remaster(pytester: pytest.Pytester) -> None:
     """check_all() without remaster fails on count mismatch."""
     pytester.makepyfile(
         """
         from pathlib import Path
 
         def test_count(golden_master, tmp_path):
-            (tmp_path / "result_0").write_text("first\\n")
-            (tmp_path / "result_1").write_text("second\\n")
-            (tmp_path / "result_2").write_text("third\\n")
-            golden_master.check_all("first", directory=tmp_path)
+            (tmp_path / "expected_0").write_text("first\\n")
+            (tmp_path / "expected_1").write_text("second\\n")
+            (tmp_path / "expected_2").write_text("third\\n")
+            golden_master.check_all(["first"], tmp_path)
         """
     )
     result = pytester.runpytest("--no-remaster")
@@ -224,8 +325,13 @@ def test_discover_test_cases(pytester: pytest.Pytester) -> None:
 
             cases = discover_test_cases(tmp_path)
             # Returns pytest.param objects; extract the path from .values[0]
-            names = [c.values[0].name for c in cases]
+            names = [c.values[0].input.name for c in cases]
             assert sorted(names) == ["b", "case1", "case2"]
+
+            # CaseData.expected() works for directory cases
+            case = cases[0].values[0]
+            assert case.expected(0).name == "expected_0"
+            assert case.expected(1, ".txt").name == "expected_1.txt"
             # IDs are relative paths
             ids = [c.id for c in cases]
             assert sorted(ids) == ["a/case1", "a/case2", "b"]
@@ -250,8 +356,12 @@ def test_discover_test_files(pytester: pytest.Pytester) -> None:
 
             py_files = discover_test_files(tmp_path, "*.py")
             # Returns pytest.param objects; extract the path from .values[0]
-            names = [p.values[0].name for p in py_files]
+            names = [p.values[0].input.name for p in py_files]
             assert sorted(names) == ["a.py", "c.py"]
+
+            # CaseData.expected() works for file cases
+            case = py_files[0].values[0]
+            assert case.expected(suffix=".txt").name == "a.txt"
             # IDs are relative paths
             ids = [p.id for p in py_files]
             assert sorted(ids) == ["a.py", "sub/c.py"]
@@ -261,8 +371,8 @@ def test_discover_test_files(pytester: pytest.Pytester) -> None:
     result.assert_outcomes(passed=1)
 
 
-def test_case_fixtures_loads_and_patches(pytester: pytest.Pytester) -> None:
-    """CaseFixtures loads JSON files and patches targets."""
+def test_file_patch_registry_loads_and_patches(pytester: pytest.Pytester) -> None:
+    """FilePatchRegistry loads JSON files and patches targets."""
     pytester.makepyfile(
         mymodule="""
         def get_data():
@@ -271,27 +381,18 @@ def test_case_fixtures_loads_and_patches(pytester: pytest.Pytester) -> None:
     )
     pytester.makepyfile(
         """
-        from pathlib import Path
-        from pytest_remaster import CaseFixtures
+        from pytest_remaster import FilePatchRegistry
 
+        patcher = FilePatchRegistry()
+        patcher.register("data.json", target="mymodule.get_data")
+
+        @patcher.use(case_param="tmp_path")
         def test_fixtures(tmp_path):
             (tmp_path / "data.json").write_text('{"key": "value"}')
-
-            fixtures = CaseFixtures()
-            fixtures.register("data.json", target="mymodule.get_data")
-
-            with fixtures.apply(tmp_path) as loaded:
-                import mymodule
-                assert mymodule.get_data() == {"key": "value"}
-                assert loaded["data.json"] == {"key": "value"}
+            # File written after decorator ran, need to re-test with pre-existing file
         """,
     )
-    result = pytester.runpytest()
-    result.assert_outcomes(passed=1)
-
-
-def test_case_fixtures_uses_default(pytester: pytest.Pytester) -> None:
-    """CaseFixtures uses default when file is missing."""
+    # The file needs to exist before the decorator runs, so use a conftest
     pytester.makepyfile(
         mymodule="""
         def get_data():
@@ -301,24 +402,55 @@ def test_case_fixtures_uses_default(pytester: pytest.Pytester) -> None:
     pytester.makepyfile(
         """
         from pathlib import Path
-        from pytest_remaster import CaseFixtures
+        import pytest
+        from pytest_remaster import FilePatchRegistry
 
-        def test_default(tmp_path):
-            fixtures = CaseFixtures()
-            fixtures.register("missing.json", target="mymodule.get_data", default=[])
+        patcher = FilePatchRegistry()
+        patcher.register("data.json", target="mymodule.get_data")
 
-            with fixtures.apply(tmp_path) as loaded:
-                import mymodule
-                assert mymodule.get_data() == []
-                assert loaded["missing.json"] == []
+        @pytest.fixture
+        def case_dir(tmp_path):
+            (tmp_path / "data.json").write_text('{"key": "value"}')
+            return tmp_path
+
+        @patcher.use(case_param="case_dir")
+        def test_fixtures(case_dir):
+            import mymodule
+            assert mymodule.get_data() == {"key": "value"}
         """,
     )
     result = pytester.runpytest()
     result.assert_outcomes(passed=1)
 
 
-def test_case_fixtures_custom_loader(pytester: pytest.Pytester) -> None:
-    """CaseFixtures supports custom loaders."""
+def test_file_patch_registry_uses_default(pytester: pytest.Pytester) -> None:
+    """FilePatchRegistry uses default when file is missing."""
+    pytester.makepyfile(
+        mymodule="""
+        def get_data():
+            raise NotImplementedError
+        """,
+    )
+    pytester.makepyfile(
+        """
+        import pytest
+        from pytest_remaster import FilePatchRegistry
+
+        patcher = FilePatchRegistry()
+        patcher.register("missing.json", target="mymodule.get_data", default=[])
+
+        @patcher.use(case_param="tmp_path")
+        def test_default(tmp_path):
+            import mymodule
+            assert mymodule.get_data() == []
+        """,
+    )
+    result = pytester.runpytest()
+    result.assert_outcomes(passed=1)
+
+
+def test_file_patch_registry_custom_loader(pytester: pytest.Pytester) -> None:
+    """FilePatchRegistry supports custom loaders."""
     pytester.makepyfile(
         mymodule="""
         def get_text():
@@ -327,31 +459,33 @@ def test_case_fixtures_custom_loader(pytester: pytest.Pytester) -> None:
     )
     pytester.makepyfile(
         """
-        from pathlib import Path
-        from pytest_remaster import CaseFixtures
+        import pytest
+        from pytest_remaster import FilePatchRegistry
 
-        def test_loader(tmp_path):
+        patcher = FilePatchRegistry()
+        patcher.register(
+            "input.txt",
+            target="mymodule.get_text",
+            loader=lambda s: s.strip().upper(),
+        )
+
+        @pytest.fixture
+        def case_dir(tmp_path):
             (tmp_path / "input.txt").write_text("hello world")
+            return tmp_path
 
-            fixtures = CaseFixtures()
-            fixtures.register(
-                "input.txt",
-                target="mymodule.get_text",
-                loader=lambda s: s.strip().upper(),
-            )
-
-            with fixtures.apply(tmp_path) as loaded:
-                import mymodule
-                assert mymodule.get_text() == "HELLO WORLD"
-                assert loaded["input.txt"] == "HELLO WORLD"
+        @patcher.use(case_param="case_dir")
+        def test_loader(case_dir):
+            import mymodule
+            assert mymodule.get_text() == "HELLO WORLD"
         """,
     )
     result = pytester.runpytest()
     result.assert_outcomes(passed=1)
 
 
-def test_case_fixtures_multiple(pytester: pytest.Pytester) -> None:
-    """CaseFixtures handles multiple registered fixtures."""
+def test_file_patch_registry_multiple(pytester: pytest.Pytester) -> None:
+    """FilePatchRegistry handles multiple registered patches."""
     pytester.makepyfile(
         mod_a="""
         def call_a():
@@ -364,22 +498,86 @@ def test_case_fixtures_multiple(pytester: pytest.Pytester) -> None:
     )
     pytester.makepyfile(
         """
-        from pathlib import Path
-        from pytest_remaster import CaseFixtures
+        import pytest
+        from pytest_remaster import FilePatchRegistry
 
-        def test_multi(tmp_path):
+        patcher = FilePatchRegistry()
+        patcher.register("a.json", target="mod_a.call_a")
+        patcher.register("b.json", target="mod_b.call_b", default="beta")
+
+        @pytest.fixture
+        def case_dir(tmp_path):
             (tmp_path / "a.json").write_text('"alpha"')
+            return tmp_path
 
-            fixtures = CaseFixtures()
-            fixtures.register("a.json", target="mod_a.call_a")
-            fixtures.register("b.json", target="mod_b.call_b", default="beta")
+        @patcher.use(case_param="case_dir")
+        def test_multi(case_dir):
+            import mod_a, mod_b
+            assert mod_a.call_a() == "alpha"
+            assert mod_b.call_b() == "beta"
+        """,
+    )
+    result = pytester.runpytest()
+    result.assert_outcomes(passed=1)
 
-            with fixtures.apply(tmp_path) as loaded:
-                import mod_a, mod_b
-                assert mod_a.call_a() == "alpha"
-                assert mod_b.call_b() == "beta"
-                assert loaded["a.json"] == "alpha"
-                assert loaded["b.json"] == "beta"
+
+def test_file_patch_registry_side_effect(pytester: pytest.Pytester) -> None:
+    """FilePatchRegistry supports side_effect for mocks called multiple times."""
+    pytester.makepyfile(
+        mymodule="""
+        def fetch():
+            raise NotImplementedError
+        """,
+    )
+    pytester.makepyfile(
+        """
+        import pytest
+        from pytest_remaster import FilePatchRegistry
+
+        patcher = FilePatchRegistry()
+        patcher.register(
+            "responses.json",
+            target="mymodule.fetch",
+            side_effect=True,
+        )
+
+        @pytest.fixture
+        def case_dir(tmp_path):
+            (tmp_path / "responses.json").write_text('[1, 2, 3]')
+            return tmp_path
+
+        @patcher.use(case_param="case_dir")
+        def test_side_effect(case_dir):
+            import mymodule
+            assert mymodule.fetch() == 1
+            assert mymodule.fetch() == 2
+            assert mymodule.fetch() == 3
+        """,
+    )
+    result = pytester.runpytest()
+    result.assert_outcomes(passed=1)
+
+
+def test_file_patch_registry_no_target(pytester: pytest.Pytester) -> None:
+    """FilePatchRegistry with no target loads data without patching."""
+    pytester.makepyfile(
+        """
+        import json
+        import pytest
+        from pytest_remaster import FilePatchRegistry
+
+        patcher = FilePatchRegistry()
+        patcher.register("config.json")
+
+        @pytest.fixture
+        def case_dir(tmp_path):
+            (tmp_path / "config.json").write_text('{"port": 8080}')
+            return tmp_path
+
+        @patcher.use(case_param="case_dir")
+        def test_load_only(case_dir):
+            data = json.loads((case_dir / "config.json").read_text())
+            assert data == {"port": 8080}
         """,
     )
     result = pytester.runpytest()

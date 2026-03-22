@@ -4,91 +4,118 @@
 
 # pytest-remaster
 
-Framework for golden master testing for pytest with automatic regeneration of the golden
-master.
+Golden master testing for pytest. Compare output against expected files, auto-regenerate
+on mismatch.
 
-## Installation
+## Example 1: directory per test case
 
-```bash
-pip install pytest-remaster
-```
-
-## Quick start
-
-Create test case directories with input files and expected output files:
+Each test case is a directory with input files and numbered expected outputs:
 
 ```
 tests/cases/
   greet/hello/
-    command          # input: "hello Alice"
-    result_0         # expected: "[#general] :wave: Hello, Alice!"
-  greet/goodbye/
-    command          # input: "goodbye Bob"
-    result_0         # expected: "[#general] :wave: Goodbye, Bob!"
-    result_1         # expected: "[#general] :door: Bob has left the chat."
+    command             # input
+    expected_0.txt      # first expected output
+  help/unknown/
+    command
+    expected_0.txt
+    expected_1.txt      # multiple outputs supported
 ```
 
-Write a parametrized test:
-
 ```python
-from pathlib import Path
-
 import pytest
-
-from pytest_remaster import GoldenMaster, discover_test_cases
+from pytest_remaster import CaseData, GoldenMaster, discover_test_cases
 
 CASES_DIR = Path(__file__).parent / "cases"
 
-
 @pytest.mark.parametrize("case", discover_test_cases(CASES_DIR))
-def test_command(case: Path, golden_master: GoldenMaster) -> None:
-    cmd = (case / "command").read_text().strip()
-    golden_master.check_all(lambda: run_command(cmd), directory=case)
+def test_command(case: CaseData, golden_master: GoldenMaster) -> None:
+    cmd = (case.input / "command").read_text().strip()
+    golden_master.check_all(lambda: my_app(cmd), case.input, suffix=".txt")
 ```
 
-`discover_test_cases` finds leaf directories and generates nice test IDs automatically
-(e.g. `test_command[greet/hello]`).
+## Example 2: one file per test case
+
+Each test case is a source file, with expected output derived from the filename:
+
+```
+tests/functional/
+  arguments.py          # input (source to lint)
+  arguments.txt         # expected output
+  anomalous.py
+  anomalous.txt
+```
+
+```python
+import pytest
+from pytest_remaster import CaseData, GoldenMaster, discover_test_files
+
+FUNC_DIR = Path(__file__).parent / "functional"
+
+@pytest.mark.parametrize("case", discover_test_files(FUNC_DIR, "*.py"))
+def test_lint(case: CaseData, golden_master: GoldenMaster) -> None:
+    golden_master.check(lambda: lint(case.input), case.expected(suffix=".txt"))
+```
+
+Both examples auto-update expected files on mismatch. Review the diff in git, rerun.
+Pass `--no-remaster` for strict comparison.
 
 ## API
 
-### `golden_master` fixture
+### `golden_master.check(actual, expected_path)`
 
-**`check(actual, expected_path, serializer=str)`** — Compare one actual value (or
-callable) against one expected file:
-
-```python
-golden_master.check(output, case / "expected.txt")
-golden_master.check(data, case / "db.json", serializer=json.dumps)
-golden_master.check(lambda: run(), case / "output.txt")
-```
-
-**`check_all(*actuals, directory, serializer=str)`** — Compare multiple values against
-`result_0`, `result_1`, ... files in a directory:
+Compare one value against one expected file:
 
 ```python
-golden_master.check_all(*events, directory=case)
-golden_master.check_all(lambda: run_command(cmd), directory=case)
+golden_master.check(output, case.expected(suffix=".txt"))
+golden_master.check(data, path / "db.json", normalizer=json_normalizer)
 ```
 
-### Discovery functions
+Options: `serializer=str`, `normalizer=None`.
 
-**`discover_test_cases(base_dir)`** — Find leaf directories (directories containing only
-files). Returns `pytest.param` objects with relative path IDs.
+### `golden_master.check_all(actuals, directory)`
 
-**`discover_test_files(base_dir, pattern)`** — Find files matching a glob pattern.
-Returns `pytest.param` objects with relative path IDs.
+Compare a list against `expected_0`, `expected_1`, ... files in a directory:
 
-### Behavior
+```python
+golden_master.check_all(lambda: my_app(cmd), case.input, suffix=".txt")
+```
 
-- **`--remaster` (default)**: When output doesn't match, the expected file is updated
-  and the test fails with _"please review and relaunch"_. Review the diff in git, then
-  rerun.
-- **`--no-remaster`**: When output doesn't match, the test fails with a unified diff. No
-  files are modified.
+Options: `serializer=str`, `normalizer=None`, `suffix=""`.
 
-The default can be changed in `pyproject.toml`:
+### Discovery
+
+```python
+discover_test_cases(base_dir)               # leaf directories → CaseData
+discover_test_files(base_dir, "*.py")       # files by pattern → CaseData
+```
+
+`CaseData.input` is the source path. `CaseData.expected(index, suffix)` derives expected
+file paths.
+
+### `FilePatchRegistry`
+
+Auto-load fixture files from case directories and patch mock targets:
+
+```python
+from pytest_remaster import FilePatchRegistry
+
+patcher = FilePatchRegistry()
+patcher.register("api_result.json", target="myapp.api.call")
+patcher.register("user.json", target="myapp.get_user", default=None)
+
+@pytest.mark.parametrize("case", discover_test_cases(CASES_DIR))
+@patcher.use
+def test_command(case, golden_master):
+    golden_master.check_all(lambda: my_app(case), case.input)
+```
+
+Options: `target=None` (load only), `side_effect=True`, `loader=json.loads`,
+`case_param="case"`.
+
+## Configuration
 
 ```toml
 [tool.pytest.ini_options]
-remaster-by-default = false
+remaster-by-default = false  # default: true
 ```

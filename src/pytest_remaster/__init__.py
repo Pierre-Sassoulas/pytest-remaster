@@ -1,15 +1,21 @@
 """Golden master testing for pytest with automatic regeneration."""
 
 from pytest_remaster.core import (
-    CaseFixtures,
+    CaseData,
+    FilePatchRegistry,
     GoldenMaster,
     discover_test_cases,
     discover_test_files,
+    json_normalizer,
+    whitespace_normalizer,
 )
 
 __all__ = [
-    "CaseFixtures",
+    "CaseData",
+    "FilePatchRegistry",
     "GoldenMaster",
     "discover_test_cases",
     "discover_test_files",
+    "json_normalizer",
+    "whitespace_normalizer",
 ]

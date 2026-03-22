@@ -68,6 +68,7 @@ messages_control.disable = [
   "magic-value-comparison",
   "missing-docstring",
   "duplicate-code",
+  "too-many-arguments",
 ]
 
 [tool.pytest]
