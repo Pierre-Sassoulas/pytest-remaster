@@ -45,14 +45,15 @@ class CaseData:
     def expected(self, index: int | None = None, suffix: str = "") -> Path:
         """Return the expected output path.
 
-        Without index: derives from input path (replaces extension with suffix).
         With index: returns ``input / expected_{index}{suffix}`` (directory mode).
+        With suffix only: replaces input extension (file mode).
         """
         if index is not None:
             return self.input / f"expected_{index}{suffix}"
         if suffix:
             return self.input.with_suffix(suffix)
-        return self.input
+        msg = "expected() requires index or suffix"
+        raise ValueError(msg)
 
 
 class GoldenMaster:
