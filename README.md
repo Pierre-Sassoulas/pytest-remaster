@@ -4,8 +4,8 @@
 
 # pytest-remaster
 
-Golden master testing for pytest. Compare output against expected files, auto-regenerate
-on mismatch.
+Pytest plugin for golden master (characterisation) testing with automatic expected file
+regeneration.
 
 ## Example 1: directory per test case
 
@@ -101,17 +101,20 @@ Auto-load fixture files from case directories and patch mock targets:
 from pytest_remaster import FilePatchRegistry
 
 patcher = FilePatchRegistry()
-patcher.register("api_result.json", target="myapp.api.call")
-patcher.register("user.json", target="myapp.get_user", default=None)
+patcher.register("command", loader=str.strip)
+patcher.register("salt.json", target="pepper.Pepper", attr="return_value.low.side_effect")
+patcher.register("tiger.json", target="requests.get", attr="return_value.json.side_effect", default=[])
+patcher.register("user.json", default={"name": "default"})
 
 @pytest.mark.parametrize("case", discover_test_cases(CASES_DIR))
-@patcher.use
 def test_command(case, golden_master):
-    golden_master.check_all(lambda: my_app(case), case.input)
+    with patcher.mock(case) as loaded:
+        events = run_command(loaded["command"], loaded["user.json"])
+        golden_master.check_all(events, case.input)
 ```
 
-Options: `target=None` (load only), `side_effect=True`, `loader=json.loads`,
-`case_param="case"`.
+Options: `target=None` (load only), `attr="return_value"` (nested mock attribute path),
+`loader=json.loads`, `default=None`.
 
 ## Configuration
 

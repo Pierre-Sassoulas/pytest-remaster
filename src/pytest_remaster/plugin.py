@@ -1,4 +1,4 @@
-"""Pytest plugin for golden master testing with automatic regeneration."""
+"""Pytest plugin for golden master (characterisation) testing."""
 
 from __future__ import annotations  # pragma: no cover
 

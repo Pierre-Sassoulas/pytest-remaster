@@ -1,4 +1,4 @@
-"""Golden master testing for pytest with automatic regeneration."""
+"""Pytest plugin for golden master testing with automatic expected file regeneration."""
 
 from pytest_remaster.core import (
     CaseData,

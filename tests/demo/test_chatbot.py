@@ -23,7 +23,7 @@ patcher.register(
 
 
 @pytest.mark.parametrize("case", discover_test_cases(CASES_DIR))
-@patcher.use
 def test_chatbot_response(case: CaseData, golden_master: GoldenMaster) -> None:
-    cmd = (case.input / "command").read_text().strip()
-    golden_master.check_all(lambda: handle_command(cmd), case.input)
+    with patcher.mock(case):
+        cmd = (case.input / "command").read_text().strip()
+        golden_master.check_all(lambda: handle_command(cmd), case.input)

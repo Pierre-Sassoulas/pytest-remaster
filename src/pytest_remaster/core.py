@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+import contextlib
 import difflib
-import functools
 import json
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -33,7 +33,7 @@ def _json_normalizer(text: str) -> str:
 
 json_normalizer = _json_normalizer
 """Built-in normalizer for JSON files. Re-parses and re-serializes with
-consistent formatting. Automatically applied for ``.json`` files."""
+consistent formatting. Opt-in via ``normalizer=json_normalizer``."""
 
 
 @dataclass(frozen=True)
@@ -226,13 +226,32 @@ def discover_test_files(base_dir: str | Path, pattern: str = "*.py") -> list[Any
 class _FixtureSpec:
     filename: str
     target: str | None
+    attr: str
     loader: Callable[[str], Any]
     default: Any
-    side_effect: bool
+
+
+def _set_nested_attr(obj: Any, attr_path: str, value: Any) -> None:
+    """Set a nested attribute like ``return_value.json.side_effect``."""
+    parts = attr_path.split(".")
+    for part in parts[:-1]:
+        obj = getattr(obj, part)
+    setattr(obj, parts[-1], value)
 
 
 class FilePatchRegistry:
-    """Registry for loading fixture files from case directories and patching them in."""
+    """Load fixture files from case directories and patch mock targets.
+
+    Usage::
+
+        patcher = FilePatchRegistry()
+        patcher.register("data.json", target="myapp.api.call")
+        patcher.register("config.json")  # load-only
+
+        with patcher.mock(case_dir) as loaded:
+            # patches active, loaded["data.json"] available
+            ...
+    """
 
     def __init__(self) -> None:
         self._specs: list[_FixtureSpec] = []
@@ -242,92 +261,73 @@ class FilePatchRegistry:
         filename: str,
         *,
         target: str | None = None,
+        attr: str = "return_value",
         loader: Callable[[str], Any] = json.loads,
         default: Any = None,
-        side_effect: bool = False,
     ) -> None:
         """Register a fixture file to be loaded and optionally patched.
 
         Args:
             filename: Name of the file in the case directory.
             target: Dotted path for ``unittest.mock.patch`` (e.g. "myapp.api.call").
-                    If ``None``, the file is loaded but not patched — read it
-                    from the case directory in the test body.
+                    If ``None``, the file is loaded but not patched.
+            attr: Attribute path on the mock to set the loaded value on.
+                    Default: ``"return_value"``. Use dotted paths for nested
+                    attributes (e.g. ``"return_value.json.side_effect"``).
             loader: Callable that takes file content (str) and returns the value.
                     Default: ``json.loads``.
             default: Value to use when the file is not present in the case directory.
-            side_effect: If ``True``, set ``side_effect`` on the mock instead of
-                    ``return_value``. Useful when the mock is called multiple times
-                    and should return different values from a list.
 
         """
         self._specs.append(
             _FixtureSpec(
                 filename=filename,
                 target=target,
+                attr=attr,
                 loader=loader,
                 default=default,
-                side_effect=side_effect,
             )
         )
 
-    def use(
-        self, func: Callable[..., Any] | None = None, *, case_param: str = "case"
-    ) -> Any:
-        """Decorate a test to load fixtures and patch targets.
+    @contextlib.contextmanager
+    def mock(self, case_dir: str | Path | CaseData) -> Generator[dict[str, Any]]:
+        """Load fixture files and activate patches.
 
-        Finds the case directory from the test parameter named ``case_param``
-        (default: ``"case"``).
-
-        Usage::
-
-            @patcher.use
-            def test_command(case, golden_master):
-                ...
-
-            @patcher.use(case_param="path_to_directory")
-            def test_command(path_to_directory, golden_master):
-                ...
-
+        Yields a dict mapping filename to loaded value.
         """
-        if func is None:
-            return functools.partial(self.use, case_param=case_param)
+        if isinstance(case_dir, CaseData):
+            case_dir = case_dir.input
+        case_dir = Path(case_dir)
+        loaded: dict[str, Any] = {}
+        # Group specs by target so we patch each target only once
+        target_mocks: dict[str, Any] = {}
+        active_patches: list[Any] = []
 
-        @functools.wraps(func)
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
-            if (case_arg := kwargs.get(case_param)) is None:
-                msg = (
-                    f"FilePatchRegistry.use: parameter '{case_param}' not found "
-                    f"in keyword arguments. Make sure the test receives it "
-                    f"via @pytest.mark.parametrize."
-                )
-                raise TypeError(msg)
-            case_dir = Path(
-                case_arg.input if isinstance(case_arg, CaseData) else case_arg
+        # First pass: load all files
+        for spec in self._specs:
+            filepath = case_dir / spec.filename
+            if filepath.exists():
+                content = filepath.read_text(encoding="utf-8")
+                value = spec.loader(content)
+            else:
+                value = spec.default
+            loaded[spec.filename] = value
+
+        # Second pass: create patches (one per unique target)
+        for spec in self._specs:
+            if spec.target is None:
+                continue
+            if spec.target not in target_mocks:
+                p = patch(spec.target)
+                mock_obj = p.start()
+                active_patches.append(p)
+                target_mocks[spec.target] = mock_obj
+            _set_nested_attr(
+                target_mocks[spec.target], spec.attr, loaded[spec.filename]
             )
-            active_patches: list[Any] = []
-            for spec in self._specs:
-                filepath = case_dir / spec.filename
-                if filepath.exists():
-                    content = filepath.read_text(encoding="utf-8")
-                    value = spec.loader(content)
-                else:
-                    value = spec.default
-                if spec.target is not None:
-                    kwargs_patch = (
-                        {"side_effect": value}
-                        if spec.side_effect
-                        else {"return_value": value}
-                    )
-                    p = patch(spec.target, **kwargs_patch)
-                    active_patches.append(p)
 
+        try:
+            yield loaded
+        finally:
             for p in active_patches:
-                p.start()
-            try:
-                return func(*args, **kwargs)
-            finally:
-                for p in active_patches:
-                    p.stop()
-
-        return wrapper
+                p.stop()

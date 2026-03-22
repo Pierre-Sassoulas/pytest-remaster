@@ -1,6 +1,7 @@
 # pytest-remaster
 
-Golden master testing framework for pytest with automatic regeneration.
+Pytest plugin for golden master (characterisation) testing with automatic expected file
+regeneration.
 
 ## Project structure
 

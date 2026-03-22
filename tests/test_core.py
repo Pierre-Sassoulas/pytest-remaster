@@ -386,37 +386,12 @@ def test_file_patch_registry_loads_and_patches(pytester: pytest.Pytester) -> Non
         patcher = FilePatchRegistry()
         patcher.register("data.json", target="mymodule.get_data")
 
-        @patcher.use(case_param="tmp_path")
         def test_fixtures(tmp_path):
             (tmp_path / "data.json").write_text('{"key": "value"}')
-            # File written after decorator ran, need to re-test with pre-existing file
-        """,
-    )
-    # The file needs to exist before the decorator runs, so use a conftest
-    pytester.makepyfile(
-        mymodule="""
-        def get_data():
-            raise NotImplementedError
-        """,
-    )
-    pytester.makepyfile(
-        """
-        from pathlib import Path
-        import pytest
-        from pytest_remaster import FilePatchRegistry
-
-        patcher = FilePatchRegistry()
-        patcher.register("data.json", target="mymodule.get_data")
-
-        @pytest.fixture
-        def case_dir(tmp_path):
-            (tmp_path / "data.json").write_text('{"key": "value"}')
-            return tmp_path
-
-        @patcher.use(case_param="case_dir")
-        def test_fixtures(case_dir):
-            import mymodule
-            assert mymodule.get_data() == {"key": "value"}
+            with patcher.mock(tmp_path) as loaded:
+                import mymodule
+                assert mymodule.get_data() == {"key": "value"}
+                assert loaded["data.json"] == {"key": "value"}
         """,
     )
     result = pytester.runpytest()
@@ -433,16 +408,16 @@ def test_file_patch_registry_uses_default(pytester: pytest.Pytester) -> None:
     )
     pytester.makepyfile(
         """
-        import pytest
         from pytest_remaster import FilePatchRegistry
 
         patcher = FilePatchRegistry()
         patcher.register("missing.json", target="mymodule.get_data", default=[])
 
-        @patcher.use(case_param="tmp_path")
         def test_default(tmp_path):
-            import mymodule
-            assert mymodule.get_data() == []
+            with patcher.mock(tmp_path) as loaded:
+                import mymodule
+                assert mymodule.get_data() == []
+                assert loaded["missing.json"] == []
         """,
     )
     result = pytester.runpytest()
@@ -459,7 +434,6 @@ def test_file_patch_registry_custom_loader(pytester: pytest.Pytester) -> None:
     )
     pytester.makepyfile(
         """
-        import pytest
         from pytest_remaster import FilePatchRegistry
 
         patcher = FilePatchRegistry()
@@ -469,15 +443,12 @@ def test_file_patch_registry_custom_loader(pytester: pytest.Pytester) -> None:
             loader=lambda s: s.strip().upper(),
         )
 
-        @pytest.fixture
-        def case_dir(tmp_path):
+        def test_loader(tmp_path):
             (tmp_path / "input.txt").write_text("hello world")
-            return tmp_path
-
-        @patcher.use(case_param="case_dir")
-        def test_loader(case_dir):
-            import mymodule
-            assert mymodule.get_text() == "HELLO WORLD"
+            with patcher.mock(tmp_path) as loaded:
+                import mymodule
+                assert mymodule.get_text() == "HELLO WORLD"
+                assert loaded["input.txt"] == "HELLO WORLD"
         """,
     )
     result = pytester.runpytest()
@@ -498,31 +469,28 @@ def test_file_patch_registry_multiple(pytester: pytest.Pytester) -> None:
     )
     pytester.makepyfile(
         """
-        import pytest
         from pytest_remaster import FilePatchRegistry
 
         patcher = FilePatchRegistry()
         patcher.register("a.json", target="mod_a.call_a")
         patcher.register("b.json", target="mod_b.call_b", default="beta")
 
-        @pytest.fixture
-        def case_dir(tmp_path):
+        def test_multi(tmp_path):
             (tmp_path / "a.json").write_text('"alpha"')
-            return tmp_path
-
-        @patcher.use(case_param="case_dir")
-        def test_multi(case_dir):
-            import mod_a, mod_b
-            assert mod_a.call_a() == "alpha"
-            assert mod_b.call_b() == "beta"
+            with patcher.mock(tmp_path) as loaded:
+                import mod_a, mod_b
+                assert mod_a.call_a() == "alpha"
+                assert mod_b.call_b() == "beta"
+                assert loaded["a.json"] == "alpha"
+                assert loaded["b.json"] == "beta"
         """,
     )
     result = pytester.runpytest()
     result.assert_outcomes(passed=1)
 
 
-def test_file_patch_registry_side_effect(pytester: pytest.Pytester) -> None:
-    """FilePatchRegistry supports side_effect for mocks called multiple times."""
+def test_file_patch_registry_nested_attr(pytester: pytest.Pytester) -> None:
+    """FilePatchRegistry supports nested attr paths."""
     pytester.makepyfile(
         mymodule="""
         def fetch():
@@ -531,27 +499,60 @@ def test_file_patch_registry_side_effect(pytester: pytest.Pytester) -> None:
     )
     pytester.makepyfile(
         """
-        import pytest
         from pytest_remaster import FilePatchRegistry
 
         patcher = FilePatchRegistry()
         patcher.register(
             "responses.json",
             target="mymodule.fetch",
-            side_effect=True,
+            attr="side_effect",
         )
 
-        @pytest.fixture
-        def case_dir(tmp_path):
+        def test_side_effect(tmp_path):
             (tmp_path / "responses.json").write_text('[1, 2, 3]')
-            return tmp_path
+            with patcher.mock(tmp_path):
+                import mymodule
+                assert mymodule.fetch() == 1
+                assert mymodule.fetch() == 2
+                assert mymodule.fetch() == 3
+        """,
+    )
+    result = pytester.runpytest()
+    result.assert_outcomes(passed=1)
 
-        @patcher.use(case_param="case_dir")
-        def test_side_effect(case_dir):
-            import mymodule
-            assert mymodule.fetch() == 1
-            assert mymodule.fetch() == 2
-            assert mymodule.fetch() == 3
+
+def test_file_patch_registry_shared_target(pytester: pytest.Pytester) -> None:
+    """Two registrations on the same target patch the mock once."""
+    pytester.makepyfile(
+        mymodule="""
+        class Api:
+            pass
+        """,
+    )
+    pytester.makepyfile(
+        """
+        from pytest_remaster import FilePatchRegistry
+
+        patcher = FilePatchRegistry()
+        patcher.register(
+            "login.json",
+            target="mymodule.Api",
+            attr="return_value.login.side_effect",
+        )
+        patcher.register(
+            "data.json",
+            target="mymodule.Api",
+            attr="return_value.query.side_effect",
+        )
+
+        def test_shared(tmp_path):
+            (tmp_path / "login.json").write_text('["ok"]')
+            (tmp_path / "data.json").write_text('[{"id": 1}]')
+            with patcher.mock(tmp_path):
+                import mymodule
+                api = mymodule.Api()
+                assert api.login() == "ok"
+                assert api.query() == {"id": 1}
         """,
     )
     result = pytester.runpytest()
@@ -562,22 +563,15 @@ def test_file_patch_registry_no_target(pytester: pytest.Pytester) -> None:
     """FilePatchRegistry with no target loads data without patching."""
     pytester.makepyfile(
         """
-        import json
-        import pytest
         from pytest_remaster import FilePatchRegistry
 
         patcher = FilePatchRegistry()
         patcher.register("config.json")
 
-        @pytest.fixture
-        def case_dir(tmp_path):
+        def test_load_only(tmp_path):
             (tmp_path / "config.json").write_text('{"port": 8080}')
-            return tmp_path
-
-        @patcher.use(case_param="case_dir")
-        def test_load_only(case_dir):
-            data = json.loads((case_dir / "config.json").read_text())
-            assert data == {"port": 8080}
+            with patcher.mock(tmp_path) as loaded:
+                assert loaded["config.json"] == {"port": 8080}
         """,
     )
     result = pytester.runpytest()

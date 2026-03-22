@@ -4,7 +4,7 @@ requires = [ "setuptools>=77", "setuptools-scm>=8" ]
 
 [project]
 name = "pytest-remaster"
-description = "Golden master testing for pytest with automatic regeneration."
+description = "Pytest plugin for golden master (characterisation) testing with automatic expected file regeneration."
 readme = "README.md"
 license = "MIT"
 authors = [ { name = "Pierre Sassoulas" } ]
