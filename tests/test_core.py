@@ -369,6 +369,17 @@ def test_discover_test_cases(pytester: pytest.Pytester) -> None:
             # IDs are relative paths
             ids = [c.id for c in cases]
             assert sorted(ids) == ["a/case1", "a/case2", "b"]
+
+            # Custom is_case: directory with a subdirectory is still a case
+            (tmp_path / "c").mkdir()
+            (tmp_path / "c" / "input.py").write_text("pass")
+            (tmp_path / "c" / "subpkg").mkdir()
+            (tmp_path / "c" / "subpkg" / "__init__.py").write_text("")
+            custom = discover_test_cases(
+                tmp_path, is_case=lambda p: any(p.glob("*.py"))
+            )
+            custom_names = [c.values[0].input.name for c in custom]
+            assert "c" in custom_names
         """
     )
     result = pytester.runpytest()

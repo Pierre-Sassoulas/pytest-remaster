@@ -203,29 +203,44 @@ class GoldenMaster:
             )
 
 
+def _is_leaf_directory(path: Path) -> bool:
+    """Default predicate: a directory containing only files (no subdirs)."""
+    return all(f.is_file() for f in path.iterdir())
+
+
 def discover_test_cases(
     base_dir: str | Path,
+    *,
+    is_case: Callable[[Path], bool] = _is_leaf_directory,
 ) -> list[Any]:
-    """Find leaf directories (containing only files) under base_dir.
+    """Find test case directories under base_dir.
 
-    Returns ``pytest.param(CaseData(input=path), id=relative_path)`` for each
-    leaf directory, ready to use with ``@pytest.mark.parametrize``.
+    Args:
+        base_dir: Root directory to search.
+        is_case: Predicate that returns True if a directory is a test case.
+            Default: directories containing only files (leaf directories).
+
+    Returns ``pytest.param(CaseData(...), id=relative_path)`` for each case,
+    ready to use with ``@pytest.mark.parametrize``.
+
     """
     base_dir = Path(base_dir)
-    return _discover_test_cases_recursive(base_dir, base_dir)
+    return _discover_test_cases_recursive(base_dir, base_dir, is_case)
 
 
-def _discover_test_cases_recursive(base_dir: Path, root: Path) -> list[Any]:
+def _discover_test_cases_recursive(
+    base_dir: Path, root: Path, is_case: Callable[[Path], bool]
+) -> list[Any]:
     result: list[Any] = []
     for entry in sorted(base_dir.iterdir()):
         if not entry.is_dir():
             continue
-        if all(f.is_file() for f in entry.iterdir()):
+        if is_case(entry):
             result.append(
                 pytest.param(CaseData(input=entry), id=str(entry.relative_to(root)))
             )
         else:
-            result.extend(_discover_test_cases_recursive(entry, root))
+            result.extend(_discover_test_cases_recursive(entry, root, is_case))
     return result
 
 
