@@ -599,11 +599,14 @@ def test_file_patch_registry_skip_if_falsy(pytester: pytest.Pytester) -> None:
         )
 
         def test_skip(tmp_path):
-            # No data.json file, default is [] which is falsy -> no patch
+            # No data.json file, default is [] which is falsy
+            # Target is still patched (blocks real calls) but attr not configured
             with patcher.mock(tmp_path) as loaded:
                 import mymodule
                 assert loaded["data.json"] == []
-                assert mymodule.get_data() == "original"  # not mocked
+                # get_data is mocked (not original) but has no configured return_value
+                result = mymodule.get_data()
+                assert result != "original"  # patched, not the real function
         """,
     )
     result = pytester.runpytest()
@@ -621,7 +624,7 @@ def test_file_patch_registry_post_load(pytester: pytest.Pytester) -> None:
         patcher.register("greeting.json")
 
         @patcher.post_load
-        def _build_message(loaded):
+        def _build_message(loaded, case_dir):
             loaded["message"] = f"{loaded['greeting.json']} {loaded['name.json']}!"
 
         def test_post_load(tmp_path):
@@ -647,11 +650,11 @@ def test_file_patch_registry_multiple_post_load(pytester: pytest.Pytester) -> No
         patcher.register("data.json")
 
         @patcher.post_load
-        def _step1(loaded):
+        def _step1(loaded, case_dir):
             loaded["step1"] = loaded["data.json"] * 2
 
         @patcher.post_load
-        def _step2(loaded):
+        def _step2(loaded, case_dir):
             loaded["step2"] = loaded["step1"] + 1
 
         def test_chain(tmp_path):
@@ -659,6 +662,29 @@ def test_file_patch_registry_multiple_post_load(pytester: pytest.Pytester) -> No
             with patcher.mock(tmp_path) as loaded:
                 assert loaded["step1"] == 10
                 assert loaded["step2"] == 11
+        """,
+    )
+    result = pytester.runpytest()
+    result.assert_outcomes(passed=1)
+
+
+def test_file_patch_registry_post_load_case_dir(pytester: pytest.Pytester) -> None:
+    """post_load hooks receive the case directory path."""
+    pytester.makepyfile(
+        """
+        from pytest_remaster import FilePatchRegistry
+
+        patcher = FilePatchRegistry()
+        patcher.register("data.json")
+
+        @patcher.post_load
+        def _use_case_dir(loaded, case_dir):
+            loaded["dir_name"] = case_dir.name
+
+        def test_case_dir(tmp_path):
+            (tmp_path / "data.json").write_text("1")
+            with patcher.mock(tmp_path) as loaded:
+                assert loaded["dir_name"] == tmp_path.name
         """,
     )
     result = pytester.runpytest()

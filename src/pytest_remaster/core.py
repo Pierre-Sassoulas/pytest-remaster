@@ -256,7 +256,7 @@ class FilePatchRegistry:
 
     def __init__(self) -> None:
         self._specs: list[_FixtureSpec] = []
-        self._post_load_hooks: list[Callable[[dict[str, Any]], None]] = []
+        self._post_load_hooks: list[Callable[[dict[str, Any], Path], None]] = []
 
     def register(  # pylint: disable=too-many-arguments
         self,
@@ -280,9 +280,10 @@ class FilePatchRegistry:
             loader: Callable that takes file content (str) and returns the value.
                     Default: ``json.loads``.
             default: Value to use when the file is not present in the case directory.
-            skip_if_falsy: If ``True``, skip patching when the loaded value is
-                    falsy (e.g. ``[]``, ``None``, ``""``). The value is still
-                    available in the loaded dict.
+            skip_if_falsy: If ``True``, the mock target is still patched (blocking
+                    real calls) but the attr is not configured when the loaded
+                    value is falsy (e.g. ``[]``, ``None``, ``""``). The value
+                    is still available in the loaded dict.
 
         """
         self._specs.append(
@@ -297,16 +298,17 @@ class FilePatchRegistry:
         )
 
     def post_load(
-        self, func: Callable[[dict[str, Any]], None]
-    ) -> Callable[[dict[str, Any]], None]:
+        self, func: Callable[[dict[str, Any], Path], None]
+    ) -> Callable[[dict[str, Any], Path], None]:
         """Register a hook that runs after all files are loaded, before patching.
 
-        The hook receives the loaded dict and can add derived values to it.
+        The hook receives the loaded dict and the case directory path,
+        and can add derived values to the loaded dict.
 
         Usage::
 
             @patcher.post_load
-            def _build_fixtures(loaded):
+            def _build_fixtures(loaded, case_dir):
                 loaded["derived"] = transform(loaded["file.json"])
 
         """
@@ -339,19 +341,21 @@ class FilePatchRegistry:
 
         # Run post-load hooks (can enrich loaded with derived values)
         for hook in self._post_load_hooks:
-            hook(loaded)
+            hook(loaded, case_dir)
 
         # Second pass: create patches (one per unique target)
         for spec in self._specs:
             if spec.target is None:
-                continue
-            if spec.skip_if_falsy and not loaded[spec.filename]:
                 continue
             if spec.target not in target_mocks:
                 p = patch(spec.target)
                 mock_obj = p.start()
                 active_patches.append(p)
                 target_mocks[spec.target] = mock_obj
+            # skip_if_falsy: still patch the target (blocks real calls)
+            # but don't configure the attr
+            if spec.skip_if_falsy and not loaded[spec.filename]:
+                continue
             _set_nested_attr(
                 target_mocks[spec.target], spec.attr, loaded[spec.filename]
             )
