@@ -61,6 +61,7 @@ lint.ignore = [
   "D203",    # one-blank-line-before-class (incompatible with D211)
   "D213",    # multi-line-summary-second-line (incompatible with D212)
   "PLC0415", # import-outside-toplevel
+  "PLR0913", # too-many-arguments
 ]
 
 [tool.pylint]

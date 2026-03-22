@@ -576,3 +576,35 @@ def test_file_patch_registry_no_target(pytester: pytest.Pytester) -> None:
     )
     result = pytester.runpytest()
     result.assert_outcomes(passed=1)
+
+
+def test_file_patch_registry_skip_if_falsy(pytester: pytest.Pytester) -> None:
+    """FilePatchRegistry skips patching when value is falsy."""
+    pytester.makepyfile(
+        mymodule="""
+        def get_data():
+            return "original"
+        """,
+    )
+    pytester.makepyfile(
+        """
+        from pytest_remaster import FilePatchRegistry
+
+        patcher = FilePatchRegistry()
+        patcher.register(
+            "data.json",
+            target="mymodule.get_data",
+            default=[],
+            skip_if_falsy=True,
+        )
+
+        def test_skip(tmp_path):
+            # No data.json file, default is [] which is falsy -> no patch
+            with patcher.mock(tmp_path) as loaded:
+                import mymodule
+                assert loaded["data.json"] == []
+                assert mymodule.get_data() == "original"  # not mocked
+        """,
+    )
+    result = pytester.runpytest()
+    result.assert_outcomes(passed=1)

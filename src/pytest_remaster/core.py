@@ -229,6 +229,7 @@ class _FixtureSpec:
     attr: str
     loader: Callable[[str], Any]
     default: Any
+    skip_if_falsy: bool
 
 
 def _set_nested_attr(obj: Any, attr_path: str, value: Any) -> None:
@@ -264,6 +265,7 @@ class FilePatchRegistry:
         attr: str = "return_value",
         loader: Callable[[str], Any] = json.loads,
         default: Any = None,
+        skip_if_falsy: bool = False,
     ) -> None:
         """Register a fixture file to be loaded and optionally patched.
 
@@ -277,6 +279,9 @@ class FilePatchRegistry:
             loader: Callable that takes file content (str) and returns the value.
                     Default: ``json.loads``.
             default: Value to use when the file is not present in the case directory.
+            skip_if_falsy: If ``True``, skip patching when the loaded value is
+                    falsy (e.g. ``[]``, ``None``, ``""``). The value is still
+                    available in the loaded dict.
 
         """
         self._specs.append(
@@ -286,6 +291,7 @@ class FilePatchRegistry:
                 attr=attr,
                 loader=loader,
                 default=default,
+                skip_if_falsy=skip_if_falsy,
             )
         )
 
@@ -316,6 +322,8 @@ class FilePatchRegistry:
         # Second pass: create patches (one per unique target)
         for spec in self._specs:
             if spec.target is None:
+                continue
+            if spec.skip_if_falsy and not loaded[spec.filename]:
                 continue
             if spec.target not in target_mocks:
                 p = patch(spec.target)
