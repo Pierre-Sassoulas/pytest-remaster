@@ -266,7 +266,7 @@ class _FixtureSpec:
     attr: str
     loader: Callable[[str], Any]
     default: Any
-    skip_if_falsy: bool
+    skip_attr_if_falsy: bool
 
 
 def _set_nested_attr(obj: Any, attr_path: str, value: Any) -> None:
@@ -303,7 +303,7 @@ class FilePatchRegistry:
         attr: str = "return_value",
         loader: Callable[[str], Any] = json.loads,
         default: Any = None,
-        skip_if_falsy: bool = False,
+        skip_attr_if_falsy: bool = False,
     ) -> None:
         """Register a fixture file to be loaded and optionally patched.
 
@@ -319,7 +319,7 @@ class FilePatchRegistry:
             loader: Callable that takes file content (str) and returns the value.
                     Default: ``json.loads``.
             default: Value to use when the file is not present in the case directory.
-            skip_if_falsy: If ``True``, the mock target is still patched (blocking
+            skip_attr_if_falsy: If ``True``, the mock target is still patched (blocking
                     real calls) but the attr is not configured when the loaded
                     value is falsy (e.g. ``[]``, ``None``, ``""``). The value
                     is still available in the loaded dict.
@@ -332,7 +332,7 @@ class FilePatchRegistry:
                 attr=attr,
                 loader=loader,
                 default=default,
-                skip_if_falsy=skip_if_falsy,
+                skip_attr_if_falsy=skip_attr_if_falsy,
             )
         )
 
@@ -375,7 +375,7 @@ class FilePatchRegistry:
                 continue
             value = loaded[spec.filename]
             if spec.attr == "new":
-                if not (spec.skip_if_falsy and not value):
+                if not (spec.skip_attr_if_falsy and not value):
                     p = patch(spec.target, new=value)
                     p.start()
                     active_patches.append(p)
@@ -384,7 +384,7 @@ class FilePatchRegistry:
                 p = patch(spec.target)
                 target_mocks[spec.target] = p.start()
                 active_patches.append(p)
-            if not (spec.skip_if_falsy and not value):
+            if not (spec.skip_attr_if_falsy and not value):
                 _set_nested_attr(target_mocks[spec.target], spec.attr, value)
         return active_patches
 
