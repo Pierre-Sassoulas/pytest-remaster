@@ -74,7 +74,7 @@ class GoldenMaster:
             expected_path: Path to the expected output file.
             serializer: Converts actual value to string. Default: str().
             normalizer: Optional function applied to both actual and expected
-                strings before comparison. The raw serializer output is still
+                strings before comparison. The normalized output is also
                 written when remastering.
 
         """
