@@ -46,12 +46,15 @@ class CaseData:
         """Return the expected output path.
 
         With index: returns ``input / expected_{index}{suffix}`` (directory mode).
-        With suffix only: replaces input extension (file mode).
+        With suffix only: returns ``input / expected{suffix}`` (directory mode)
+        or replaces input extension (file mode).
         """
         if index is not None:
             return self.input / f"expected_{index}{suffix}"
         if suffix:
-            return self.input.with_suffix(suffix)
+            if self.input.suffix:
+                return self.input.with_suffix(suffix)
+            return self.input / f"expected{suffix}"
         msg = "expected() requires index or suffix"
         raise ValueError(msg)
 
@@ -120,6 +123,36 @@ class GoldenMaster:
             self._remaster_file(write_str, expected_str, expected_path)
         else:
             self._fail_mismatch(actual_str, expected_str, expected_path)
+
+    def check_each(
+        self,
+        case: CaseData,
+        *,
+        runner: Callable[[CaseData], Any],
+        extractors: dict[str, Callable[[Any], Any]],
+        serializer: Callable[[Any], str] = str,
+        normalizer: Callable[[str], str] | None = None,
+    ) -> None:
+        """Run a function on a case and check named outputs.
+
+        Args:
+            case: The test case.
+            runner: Callable that takes the case and returns a result object.
+            extractors: Mapping of file suffix to extractor function. Each
+                extractor receives the result from ``runner`` and returns
+                the value to compare.
+            serializer: Converts each value to string. Default: str().
+            normalizer: Optional function applied before comparison.
+
+        """
+        result = runner(case)
+        for suffix, getter in extractors.items():
+            self.check(
+                getter(result),
+                case.expected(suffix=suffix),
+                serializer=serializer,
+                normalizer=normalizer,
+            )
 
     def _remaster_file(
         self, actual_str: str, expected_str: str | None, expected_path: Path

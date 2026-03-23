@@ -1,0 +1,2 @@
+DEBUG: dividing 5 / 0
+ERROR: division by zero: 5 / 0

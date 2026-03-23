@@ -12,12 +12,17 @@ regeneration.
 - `tests/test_plugin.py` — Tests for the plugin options and fixtures (via pytester)
 - `tests/test_core.py` — Tests for core logic (via pytester)
 - `tests/demo/` — Demo chatbot app exercising the framework end-to-end
+- `tests/demo_subprocess/` — Demo CLI app with capsys/caplog capture
 
 ## Public API
 
-- `GoldenMaster` — fixture, `check()` for single file, `check_all()` for directory
+- `GoldenMaster` — fixture, `check()` for single file, `check_all()` for directory,
+  `check_each()` for named outputs (runner + extractors)
 - `CaseData` — returned by discovery, `.input` path + `.expected(index, suffix)` helper
-- `FilePatchRegistry` — register file→mock mappings, `@patcher.use` decorator
+  - `expected(index=, suffix=)` — directory mode: `expected_{index}{suffix}`
+  - `expected(suffix=)` — directory mode: `expected{suffix}`, file mode: replaces
+    extension
+- `FilePatchRegistry` — register file→mock mappings, `patcher.mock()` context manager
 - `discover_test_cases(base_dir)` — leaf directories → `CaseData`
 - `discover_test_files(base_dir, pattern)` — files by glob → `CaseData`
 - `json_normalizer`, `whitespace_normalizer` — opt-in normalizers for `check()`
