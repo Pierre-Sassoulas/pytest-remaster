@@ -6,16 +6,16 @@ import pytest
 
 from pytest_remaster import (
     CaseData,
-    FilePatchRegistry,
     GoldenMaster,
+    PatchRegistry,
     discover_test_cases,
 )
 from tests.demo.chatbot import handle_command
 
 CASES_DIR = __file__.replace("test_chatbot.py", "cases")
 
-patcher = FilePatchRegistry()
-patcher.register(
+patcher = PatchRegistry()
+patcher.add_file_patch(
     "user_status.json",
     target="tests.demo.chatbot.get_user_status",
     default="offline",

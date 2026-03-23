@@ -11,13 +11,13 @@ from pytest_remaster.golden_master import (
     json_normalizer,
     whitespace_normalizer,
 )
-from pytest_remaster.patching import FilePatchRegistry
+from pytest_remaster.patching import PatchRegistry
 
 __all__ = [
     "CaseData",
-    "FilePatchRegistry",
     "GoldenMaster",
     "MalformedTestCase",
+    "PatchRegistry",
     "discover_test_cases",
     "discover_test_files",
     "json_normalizer",

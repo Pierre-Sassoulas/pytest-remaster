@@ -11,7 +11,7 @@ regeneration.
   `discover_test_files`
 - `src/pytest_remaster/golden_master.py` — `GoldenMaster`, `MalformedTestCase`,
   normalizers
-- `src/pytest_remaster/patching.py` — `FilePatchRegistry`
+- `src/pytest_remaster/patching.py` — `PatchRegistry`
 - `tests/test_plugin.py` — Tests for the plugin options and fixtures (via pytester)
 - `tests/test_core.py` — Tests for core logic (via pytester)
 - `tests/demo/` — Demo chatbot app exercising the framework end-to-end
@@ -25,7 +25,8 @@ regeneration.
   - `expected(index=, suffix=)` — directory mode: `expected_{index}{suffix}`
   - `expected(suffix=)` — directory mode: `expected{suffix}`, file mode: replaces
     extension
-- `FilePatchRegistry` — register file→mock mappings, `patcher.mock()` context manager
+- `PatchRegistry` — `add_file_patch()` for file→mock mappings, `add_patch()` for plain
+  mocks, `patcher.mock()` context manager yields dict with loaded data + mock objects
 - `discover_test_cases(base_dir)` — leaf directories → `CaseData`
 - `discover_test_files(base_dir, pattern)` — files by glob → `CaseData`
 - `json_normalizer`, `whitespace_normalizer` — opt-in normalizers for `check()`

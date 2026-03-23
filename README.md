@@ -127,40 +127,39 @@ def test_cli(
 All examples auto-update expected files on mismatch. Review the diff in git, rerun. Pass
 `--no-remaster` for strict comparison.
 
-### Patching with `FilePatchRegistry`
+### Patching with `PatchRegistry`
 
-Autoload fixture files from case directories and patch mock targets:
+Load fixture files and set up mock patches:
 
 ```python
 import pytest
-
-from pytest_remaster import FilePatchRegistry, discover_test_cases
 from pathlib import Path
 
 from my_app import run_command
 
+from pytest_remaster import PatchRegistry, discover_test_cases
+
 CASES_DIR = Path(__file__).parent / "cases"
 
-patcher = FilePatchRegistry()
-patcher.register("command", loader=str.strip)
-patcher.register(
+patcher = PatchRegistry()
+patcher.add_file_patch("command", loader=str.strip)
+patcher.add_file_patch(
     "salt.json", target="pepper.Pepper", attr="return_value.low.side_effect"
 )
-patcher.register(
-    "mywebapp.json",
-    target="requests.get",
-    attr="return_value.json.side_effect",
-    default=[],
-)
-patcher.register("user.json", default={"name": "default"})
+patcher.add_file_patch("user.json", default={"name": "default"})
+patcher.add_patch("subprocess.run")
 
 
 @pytest.mark.parametrize("case", discover_test_cases(CASES_DIR))
 def test_command(case, golden_master):
-    with patcher.mock(case) as loaded:
-        events = run_command(loaded["command"], loaded["user.json"])
+    with patcher.mock(case) as ctx:
+        events = run_command(ctx["command"], ctx["user.json"])
         golden_master.check_all(events, case.input)
 ```
 
-Options: `target=None` (load only), `attr="return_value"` (nested mock attribute path),
-`loader=json.loads`, `default=None`.
+`add_file_patch(filename)`: load a file from the case directory, optionally patch a
+target. Options: `target`, `attr="return_value"`, `loader=json.loads`, `default=None`.
+
+`add_patch(target)`: patch a target without loading a file. The mock object is available
+in the context dict. Options: `name` (dict key, defaults to target), `**kwargs` passed
+to `unittest.mock.patch`.
