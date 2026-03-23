@@ -12,8 +12,10 @@ regeneration.
 - `src/pytest_remaster/golden_master.py` — `GoldenMaster`, `MalformedTestCase`,
   normalizers
 - `src/pytest_remaster/patching.py` — `PatchRegistry`
-- `tests/test_plugin.py` — Tests for the plugin options and fixtures (via pytester)
-- `tests/test_core.py` — Tests for core logic (via pytester)
+- `tests/test_plugin.py` — Tests for plugin options and fixtures (via pytester)
+- `tests/test_golden_master.py` — Tests for GoldenMaster (via pytester)
+- `tests/test_discovery.py` — Tests for discovery (via pytester)
+- `tests/test_patching.py` — Tests for PatchRegistry (via pytester)
 - `tests/demo/` — Demo chatbot app exercising the framework end-to-end
 - `tests/demo_subprocess/` — Demo CLI app with capsys/caplog capture
 
