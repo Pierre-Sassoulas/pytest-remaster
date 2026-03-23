@@ -15,7 +15,6 @@ from pytest_remaster.discovery import CaseData
 
 
 def _normalize_whitespace(text: str) -> str:
-    """Normalize line endings and strip trailing whitespace per line."""
     lines = text.replace("\r\n", "\n").replace("\r", "\n").splitlines()
     return "\n".join(line.rstrip() for line in lines).rstrip()
 
@@ -26,7 +25,6 @@ normalizes line endings to ``\\n``. Opt-in via ``normalizer=whitespace_normalize
 
 
 def _json_normalizer(text: str) -> str:
-    """Normalize JSON text for comparison, ignoring formatting differences."""
     return json.dumps(json.loads(text), indent=2, sort_keys=True, ensure_ascii=False)
 
 

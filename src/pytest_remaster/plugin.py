@@ -2,7 +2,7 @@
 
 from __future__ import annotations  # pragma: no cover
 
-from collections.abc import Generator  # pragma: no cover
+from collections.abc import Iterator  # pragma: no cover
 from typing import TYPE_CHECKING  # pragma: no cover
 
 import pytest  # pragma: no cover
@@ -48,7 +48,7 @@ def remaster(request: pytest.FixtureRequest) -> bool:  # pragma: no cover
 @pytest.fixture  # pragma: no cover
 def golden_master(
     remaster: bool,  # pylint: disable=redefined-outer-name
-) -> Generator[GoldenMaster]:  # pragma: no cover
+) -> Iterator[GoldenMaster]:  # pragma: no cover
     """Golden master comparison fixture.
 
     Yields a GoldenMaster instance. At teardown, fails if any golden

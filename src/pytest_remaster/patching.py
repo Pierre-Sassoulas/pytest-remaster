@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import json
-from collections.abc import Callable, Generator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -187,7 +187,7 @@ class PatchRegistry:
         return active_patches
 
     @contextlib.contextmanager
-    def mock(self, case_dir: str | Path | CaseData) -> Generator[dict[str, Any]]:
+    def mock(self, case_dir: str | Path | CaseData) -> Iterator[dict[str, Any]]:
         """Load fixture files and activate patches.
 
         Yields a dict mapping filenames to loaded values and patch names
