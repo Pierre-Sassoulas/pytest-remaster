@@ -8,6 +8,8 @@ repos:
       - id: ruff-check
         args: ["--fix"]
       - id: ruff-format
+        types_or: [python, markdown]
+        args: ["--preview"]
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:

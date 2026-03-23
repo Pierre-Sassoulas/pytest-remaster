@@ -35,10 +35,11 @@ python -m venv .venv
 .venv/bin/pytest
 ```
 
-Pre-commit hooks require the venv on PATH for pylint:
+Always lint and format through pre-commit, not by invoking tools directly:
 
 ```bash
 export PATH="$(pwd)/.venv/bin:$PATH"
+pre-commit run --all-files
 ```
 
 ## Testing notes

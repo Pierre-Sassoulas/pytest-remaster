@@ -44,6 +44,7 @@ from pytest_remaster import CaseData, GoldenMaster, discover_test_cases
 
 CASES_DIR = Path(__file__).parent / "cases"
 
+
 @pytest.mark.parametrize("case", discover_test_cases(CASES_DIR))
 def test_command(case: CaseData, golden_master: GoldenMaster) -> None:
     cmd = (case.input / "command").read_text().strip()
@@ -72,6 +73,7 @@ from pytest_remaster import CaseData, GoldenMaster, discover_test_files
 from my_linter import lint
 
 FUNC_DIR = Path(__file__).parent / "functional"
+
 
 @pytest.mark.parametrize("case", discover_test_files(FUNC_DIR, "*.py"))
 def test_lint(case: CaseData, golden_master: GoldenMaster) -> None:
@@ -102,9 +104,11 @@ from pytest_remaster import CaseData, GoldenMaster, discover_test_cases
 
 CASES_DIR = Path(__file__).parent / "cases"
 
+
 @pytest.mark.parametrize("case", discover_test_cases(CASES_DIR))
-def test_cli(case: CaseData, golden_master: GoldenMaster,
-             capsys: pytest.CaptureFixture[str]) -> None:
+def test_cli(
+    case: CaseData, golden_master: GoldenMaster, capsys: pytest.CaptureFixture[str]
+) -> None:
     def run(case: CaseData) -> pytest.CaptureResult[str]:
         cmd = (case.input / "command").read_text().strip()
         main(cmd)
@@ -139,9 +143,17 @@ CASES_DIR = Path(__file__).parent / "cases"
 
 patcher = FilePatchRegistry()
 patcher.register("command", loader=str.strip)
-patcher.register("salt.json", target="pepper.Pepper", attr="return_value.low.side_effect")
-patcher.register("mywebapp.json", target="requests.get", attr="return_value.json.side_effect", default=[])
+patcher.register(
+    "salt.json", target="pepper.Pepper", attr="return_value.low.side_effect"
+)
+patcher.register(
+    "mywebapp.json",
+    target="requests.get",
+    attr="return_value.json.side_effect",
+    default=[],
+)
 patcher.register("user.json", default={"name": "default"})
+
 
 @pytest.mark.parametrize("case", discover_test_cases(CASES_DIR))
 def test_command(case, golden_master):
