@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING  # pragma: no cover
 import pytest  # pragma: no cover
 
 if TYPE_CHECKING:  # pragma: no cover
-    from pytest_remaster.core import GoldenMaster
+    from pytest_remaster.golden_master import GoldenMaster
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:  # pragma: no cover
@@ -55,7 +55,7 @@ def golden_master(
     masters were updated during the test (remaster mode).
     """
     # pylint: disable-next=import-outside-toplevel
-    from pytest_remaster.core import GoldenMaster
+    from pytest_remaster.golden_master import GoldenMaster
 
     gm = GoldenMaster(remaster=remaster)
     yield gm

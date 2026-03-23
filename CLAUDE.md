@@ -7,8 +7,11 @@ regeneration.
 
 - `src/pytest_remaster/plugin.py` — Pytest plugin: `--remaster`/`--no-remaster` options,
   `remaster` and `golden_master` fixtures
-- `src/pytest_remaster/core.py` — Core logic: `GoldenMaster`, `CaseData`,
-  `FilePatchRegistry`, `discover_test_cases`, `discover_test_files`, normalizers
+- `src/pytest_remaster/discovery.py` — `CaseData`, `discover_test_cases`,
+  `discover_test_files`
+- `src/pytest_remaster/golden_master.py` — `GoldenMaster`, `MalformedTestCase`,
+  normalizers
+- `src/pytest_remaster/patching.py` — `FilePatchRegistry`
 - `tests/test_plugin.py` — Tests for the plugin options and fixtures (via pytester)
 - `tests/test_core.py` — Tests for core logic (via pytester)
 - `tests/demo/` — Demo chatbot app exercising the framework end-to-end
