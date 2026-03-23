@@ -7,11 +7,14 @@ import json
 import re
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 from pytest_remaster.discovery import CaseData
+
+if TYPE_CHECKING:
+    from _pytest.config import Config
 
 
 def _normalize_whitespace(text: str) -> str:
@@ -69,8 +72,9 @@ class MalformedTestCase(Exception):
 class GoldenMaster:
     """Golden master comparison with optional auto-regeneration."""
 
-    def __init__(self, remaster: bool) -> None:
+    def __init__(self, remaster: bool, config: Config | None = None) -> None:
         self._remaster = remaster
+        self._config = config
         self._updated: list[str] = []
 
     def assert_remastered(self) -> None:
@@ -186,9 +190,8 @@ class GoldenMaster:
             action = "created" if expected_str is None else "updated"
             self._updated.append(f"{action}: {expected_path}")
 
-    @staticmethod
     def _fail_mismatch(
-        actual_str: str, expected_str: str | None, expected_path: Path
+        self, actual_str: str, expected_str: str | None, expected_path: Path
     ) -> None:
         if expected_str is None:
             pytest.fail(
@@ -196,16 +199,44 @@ class GoldenMaster:
                 f"Run with --remaster to create it.",
                 pytrace=False,
             )
-        diff = difflib.unified_diff(
-            expected_str.splitlines(keepends=True),
-            actual_str.splitlines(keepends=True),
-            fromfile=str(expected_path),
-            tofile="actual",
+        diff_lines = list(
+            difflib.unified_diff(
+                expected_str.splitlines(keepends=True),
+                actual_str.splitlines(keepends=True),
+                fromfile=str(expected_path),
+                tofile="actual",
+            )
         )
+        diff_text = self._maybe_truncate(diff_lines)
         pytest.fail(
-            f"Mismatch at {expected_path}:\n{''.join(diff)}",
+            f"Mismatch at {expected_path}:\n{diff_text}",
             pytrace=False,
         )
+
+    _VERBOSE_NO_TRUNCATE = 2
+
+    def _maybe_truncate(self, lines: list[str]) -> str:
+        if self._config is None:
+            return "".join(lines)
+        raw_lines = self._config.getini("truncation_limit_lines")
+        raw_chars = self._config.getini("truncation_limit_chars")
+        if raw_lines is None and raw_chars is None:
+            return "".join(lines)
+        max_lines = int(raw_lines or 0)
+        max_chars = int(raw_chars or 0)
+        verbose = self._config.get_verbosity(
+            self._config.VERBOSITY_ASSERTIONS,
+        )
+        if verbose >= self._VERBOSE_NO_TRUNCATE or max_lines == max_chars == 0:
+            return "".join(lines)
+        if 0 < max_lines < len(lines):
+            hidden = len(lines) - max_lines
+            truncated = lines[:max_lines]
+            truncated.append(
+                f"\n...diff truncated ({hidden} lines hidden), use '-vv' to show\n"
+            )
+            return "".join(truncated)
+        return "".join(lines)
 
     def check_all(
         self,

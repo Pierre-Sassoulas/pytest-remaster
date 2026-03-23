@@ -5,16 +5,22 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING
 
 import pytest
 
+if TYPE_CHECKING:
+    from _pytest.mark.structures import ParameterSet
 
-@dataclass(frozen=True)
+
+@dataclass(frozen=True, repr=False)
 class CaseData:
     """A discovered test case with input path and expected output helpers."""
 
     input: Path
+
+    def __repr__(self) -> str:
+        return f"CaseData({self.input.name})"
 
     def expected(self, index: int | None = None, suffix: str = "") -> Path:
         """Return the expected output path.
@@ -42,7 +48,7 @@ def discover_test_cases(
     base_dir: str | Path,
     *,
     is_case: Callable[[Path], bool] = _is_leaf_directory,
-) -> list[Any]:
+) -> list[ParameterSet]:
     """Find test case directories under base_dir.
 
     Args:
@@ -60,8 +66,8 @@ def discover_test_cases(
 
 def _discover_test_cases_recursive(
     base_dir: Path, root: Path, is_case: Callable[[Path], bool]
-) -> list[Any]:
-    result: list[Any] = []
+) -> list[ParameterSet]:
+    result: list[ParameterSet] = []
     for entry in sorted(base_dir.iterdir()):
         if not entry.is_dir():
             continue
@@ -74,7 +80,9 @@ def _discover_test_cases_recursive(
     return result
 
 
-def discover_test_files(base_dir: str | Path, pattern: str = "*.py") -> list[Any]:
+def discover_test_files(
+    base_dir: str | Path, pattern: str = "*.py"
+) -> list[ParameterSet]:
     """Find files matching a glob pattern under base_dir.
 
     Returns ``pytest.param(CaseData(input=path), id=relative_path)`` for each

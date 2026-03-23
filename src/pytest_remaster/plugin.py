@@ -47,6 +47,7 @@ def remaster(request: pytest.FixtureRequest) -> bool:  # pragma: no cover
 
 @pytest.fixture  # pragma: no cover
 def golden_master(
+    request: pytest.FixtureRequest,  # pragma: no cover
     remaster: bool,  # pylint: disable=redefined-outer-name
 ) -> Iterator[GoldenMaster]:  # pragma: no cover
     """Golden master comparison fixture.
@@ -57,6 +58,6 @@ def golden_master(
     # pylint: disable-next=import-outside-toplevel
     from pytest_remaster.golden_master import GoldenMaster
 
-    gm = GoldenMaster(remaster=remaster)
+    gm = GoldenMaster(remaster=remaster, config=request.config)
     yield gm
     gm.assert_remastered()

@@ -76,6 +76,59 @@ def test_check_mismatch_no_remaster(pytester: pytest.Pytester) -> None:
     result.stdout.fnmatch_lines(["*mismatch*"])
 
 
+def test_check_mismatch_truncated(pytester: pytest.Pytester) -> None:
+    """check() truncates large diffs based on truncation_limit_lines."""
+    pytester.makeini(
+        """
+        [pytest]
+        truncation_limit_lines = 8
+        truncation_limit_chars = 640
+        """
+    )
+    pytester.makepyfile(
+        """
+        from pathlib import Path
+
+        def test_big_diff(golden_master, tmp_path):
+            expected = tmp_path / "expected.txt"
+            # 50 lines of "old" content
+            expected.write_text("\\n".join(f"old line {i}" for i in range(50)) + "\\n")
+            # 50 lines of "new" content
+            actual = "\\n".join(f"new line {i}" for i in range(50))
+            golden_master.check(actual, expected)
+        """
+    )
+    result = pytester.runpytest("--no-remaster", "--tb=short")
+    result.assert_outcomes(failed=1)
+    result.stdout.fnmatch_lines(["*diff truncated*lines hidden*use '-vv' to show*"])
+
+
+def test_check_mismatch_not_truncated_with_vv(pytester: pytest.Pytester) -> None:
+    """check() shows full diff with -vv."""
+    pytester.makeini(
+        """
+        [pytest]
+        truncation_limit_lines = 8
+        truncation_limit_chars = 640
+        """
+    )
+    pytester.makepyfile(
+        """
+        from pathlib import Path
+
+        def test_big_diff(golden_master, tmp_path):
+            expected = tmp_path / "expected.txt"
+            expected.write_text("\\n".join(f"old line {i}" for i in range(50)) + "\\n")
+            actual = "\\n".join(f"new line {i}" for i in range(50))
+            golden_master.check(actual, expected)
+        """
+    )
+    result = pytester.runpytest("--no-remaster", "-vv", "--tb=short")
+    result.assert_outcomes(failed=1)
+    result.stdout.fnmatch_lines(["*new line 49*"])
+    result.stdout.no_fnmatch_line("*diff truncated*")
+
+
 def test_check_missing_file_remaster(pytester: pytest.Pytester) -> None:
     """check() with remaster creates missing file and fails."""
     pytester.makepyfile(

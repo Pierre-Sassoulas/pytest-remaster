@@ -154,9 +154,7 @@ class PatchRegistry:
             hook(ctx, case_dir)
         return ctx
 
-    def _create_file_patches(
-        self, ctx: dict[str, Any]
-    ) -> tuple[list[Any], dict[str, Any]]:
+    def _create_file_patches(self, ctx: dict[str, Any]) -> list[Any]:
         target_mocks: dict[str, Any] = {}
         active_patches: list[Any] = []
         for spec in self._file_specs:
@@ -175,7 +173,7 @@ class PatchRegistry:
                 active_patches.append(p)
             if not (spec.skip_attr_if_falsy and not value):
                 _set_nested_attr(target_mocks[spec.target], spec.attr, value)
-        return active_patches, target_mocks
+        return active_patches
 
     def _create_plain_patches(self, ctx: dict[str, Any]) -> list[Any]:
         active_patches: list[Any] = []
@@ -197,7 +195,7 @@ class PatchRegistry:
             case_dir = case_dir.input
         case_dir = Path(case_dir)
         ctx = self._load_files(case_dir)
-        file_patches, _ = self._create_file_patches(ctx)
+        file_patches = self._create_file_patches(ctx)
         plain_patches = self._create_plain_patches(ctx)
         all_patches = file_patches + plain_patches
         try:
