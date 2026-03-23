@@ -33,6 +33,35 @@ json_normalizer = _json_normalizer
 consistent formatting. Opt-in via ``normalizer=json_normalizer``."""
 
 
+def mock_calls_serializer(name: str) -> Callable[[Any], str]:
+    """Return a serializer that formats a mock's ``call_args_list``.
+
+    Usage::
+
+        golden_master.check(
+            mock_obj.call_args_list,
+            expected_path,
+            serializer=mock_calls_serializer("subprocess"),
+        )
+
+    Produces one line per call, e.g.::
+
+        subprocess(['sudo', 'reboot'], check=True)
+        subprocess(['echo', 'done'])
+
+    """
+
+    def _serialize(call_args_list: Any) -> str:
+        lines = []
+        for call in call_args_list:
+            parts = [repr(a) for a in call.args]
+            parts.extend(f"{k}={v!r}" for k, v in call.kwargs.items())
+            lines.append(f"{name}({', '.join(parts)})")
+        return "\n".join(lines)
+
+    return _serialize
+
+
 class MalformedTestCase(Exception):
     """Raised when a discovered test case directory is missing required files."""
 

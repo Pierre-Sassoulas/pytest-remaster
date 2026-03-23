@@ -240,6 +240,59 @@ def test_check_serializer(pytester: pytest.Pytester) -> None:
     result.assert_outcomes(passed=1)
 
 
+def test_mock_calls_serializer(pytester: pytest.Pytester) -> None:
+    """mock_calls_serializer formats call_args_list as diffable text."""
+    pytester.makepyfile(
+        """
+        from pathlib import Path
+        from unittest.mock import MagicMock
+        from pytest_remaster import mock_calls_serializer
+
+        def test_serializer(golden_master, tmp_path):
+            mock = MagicMock()
+            mock("arg1", "arg2", key="value")
+            mock("only_pos")
+            mock(flag=True)
+
+            expected = tmp_path / "expected_calls"
+            expected.write_text(
+                "fn('arg1', 'arg2', key='value')\\n"
+                "fn('only_pos')\\n"
+                "fn(flag=True)\\n"
+            )
+            golden_master.check(
+                mock.call_args_list,
+                expected,
+                serializer=mock_calls_serializer("fn"),
+            )
+        """
+    )
+    result = pytester.runpytest("--no-remaster")
+    result.assert_outcomes(passed=1)
+
+
+def test_mock_calls_serializer_empty(pytester: pytest.Pytester) -> None:
+    """mock_calls_serializer returns empty string when no calls."""
+    pytester.makepyfile(
+        """
+        from unittest.mock import MagicMock
+        from pytest_remaster import mock_calls_serializer
+
+        def test_empty(golden_master, tmp_path):
+            mock = MagicMock()
+            expected = tmp_path / "expected_calls"
+            # No calls, no file — check() skips both-empty case
+            golden_master.check(
+                mock.call_args_list,
+                expected,
+                serializer=mock_calls_serializer("fn"),
+            )
+        """
+    )
+    result = pytester.runpytest("--no-remaster")
+    result.assert_outcomes(passed=1)
+
+
 def test_check_directory_match(pytester: pytest.Pytester) -> None:
     """check_all() passes when all results match."""
     pytester.makepyfile(
