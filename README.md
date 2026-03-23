@@ -117,10 +117,7 @@ def test_cli(
     golden_master.check_each(
         case,
         runner=run,
-        extractors={
-            ".stdout": lambda r: r.out,
-            ".stderr": lambda r: r.err,
-        },
+        extractors={".stdout": lambda r: r.out, ".stderr": lambda r: r.err},
     )
 ```
 

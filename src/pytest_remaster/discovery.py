@@ -45,9 +45,7 @@ def _is_leaf_directory(path: Path) -> bool:
 
 
 def discover_test_cases(
-    base_dir: str | Path,
-    *,
-    is_case: Callable[[Path], bool] = _is_leaf_directory,
+    base_dir: str | Path, *, is_case: Callable[[Path], bool] = _is_leaf_directory
 ) -> list[ParameterSet]:
     """Find test case directories under base_dir.
 

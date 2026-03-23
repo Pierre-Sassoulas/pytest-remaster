@@ -100,13 +100,7 @@ class PatchRegistry:
             )
         )
 
-    def add_patch(
-        self,
-        target: str,
-        *,
-        name: str | None = None,
-        **kwargs: Any,
-    ) -> None:
+    def add_patch(self, target: str, *, name: str | None = None, **kwargs: Any) -> None:
         """Register a plain mock patch (no file involved).
 
         The mock object is available in the context dict yielded by ``mock()``,

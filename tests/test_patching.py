@@ -11,7 +11,7 @@ def test_add_file_patch_loads_and_patches(pytester: pytest.Pytester) -> None:
         mymodule="""
         def get_data():
             raise NotImplementedError
-        """,
+        """
     )
     pytester.makepyfile(
         """
@@ -26,7 +26,7 @@ def test_add_file_patch_loads_and_patches(pytester: pytest.Pytester) -> None:
                 import mymodule
                 assert mymodule.get_data() == {"key": "value"}
                 assert loaded["data.json"] == {"key": "value"}
-        """,
+        """
     )
     result = pytester.runpytest()
     result.assert_outcomes(passed=1)
@@ -38,7 +38,7 @@ def test_add_file_patch_uses_default(pytester: pytest.Pytester) -> None:
         mymodule="""
         def get_data():
             raise NotImplementedError
-        """,
+        """
     )
     pytester.makepyfile(
         """
@@ -52,7 +52,7 @@ def test_add_file_patch_uses_default(pytester: pytest.Pytester) -> None:
                 import mymodule
                 assert mymodule.get_data() == []
                 assert loaded["missing.json"] == []
-        """,
+        """
     )
     result = pytester.runpytest()
     result.assert_outcomes(passed=1)
@@ -64,7 +64,7 @@ def test_add_file_patch_custom_loader(pytester: pytest.Pytester) -> None:
         mymodule="""
         def get_text():
             raise NotImplementedError
-        """,
+        """
     )
     pytester.makepyfile(
         """
@@ -83,7 +83,7 @@ def test_add_file_patch_custom_loader(pytester: pytest.Pytester) -> None:
                 import mymodule
                 assert mymodule.get_text() == "HELLO WORLD"
                 assert loaded["input.txt"] == "HELLO WORLD"
-        """,
+        """
     )
     result = pytester.runpytest()
     result.assert_outcomes(passed=1)
@@ -117,7 +117,7 @@ def test_add_file_patch_multiple(pytester: pytest.Pytester) -> None:
                 assert mod_b.call_b() == "beta"
                 assert loaded["a.json"] == "alpha"
                 assert loaded["b.json"] == "beta"
-        """,
+        """
     )
     result = pytester.runpytest()
     result.assert_outcomes(passed=1)
@@ -129,7 +129,7 @@ def test_add_file_patch_nested_attr(pytester: pytest.Pytester) -> None:
         mymodule="""
         def fetch():
             raise NotImplementedError
-        """,
+        """
     )
     pytester.makepyfile(
         """
@@ -149,7 +149,7 @@ def test_add_file_patch_nested_attr(pytester: pytest.Pytester) -> None:
                 assert mymodule.fetch() == 1
                 assert mymodule.fetch() == 2
                 assert mymodule.fetch() == 3
-        """,
+        """
     )
     result = pytester.runpytest()
     result.assert_outcomes(passed=1)
@@ -161,7 +161,7 @@ def test_add_file_patch_shared_target(pytester: pytest.Pytester) -> None:
         mymodule="""
         class Api:
             pass
-        """,
+        """
     )
     pytester.makepyfile(
         """
@@ -187,7 +187,7 @@ def test_add_file_patch_shared_target(pytester: pytest.Pytester) -> None:
                 api = mymodule.Api()
                 assert api.login() == "ok"
                 assert api.query() == {"id": 1}
-        """,
+        """
     )
     result = pytester.runpytest()
     result.assert_outcomes(passed=1)
@@ -206,7 +206,7 @@ def test_add_file_patch_no_target(pytester: pytest.Pytester) -> None:
             (tmp_path / "config.json").write_text('{"port": 8080}')
             with patcher.mock(tmp_path) as loaded:
                 assert loaded["config.json"] == {"port": 8080}
-        """,
+        """
     )
     result = pytester.runpytest()
     result.assert_outcomes(passed=1)
@@ -218,7 +218,7 @@ def test_add_file_patch_skip_attr_if_falsy(pytester: pytest.Pytester) -> None:
         mymodule="""
         def get_data():
             return "original"
-        """,
+        """
     )
     pytester.makepyfile(
         """
@@ -241,7 +241,7 @@ def test_add_file_patch_skip_attr_if_falsy(pytester: pytest.Pytester) -> None:
                 # get_data is mocked (not original) but has no configured return_value
                 result = mymodule.get_data()
                 assert result != "original"  # patched, not the real function
-        """,
+        """
     )
     result = pytester.runpytest()
     result.assert_outcomes(passed=1)
@@ -268,7 +268,7 @@ def test_post_load(pytester: pytest.Pytester) -> None:
                 assert loaded["name.json"] == "Alice"
                 assert loaded["greeting.json"] == "Hello"
                 assert loaded["message"] == "Hello Alice!"
-        """,
+        """
     )
     result = pytester.runpytest()
     result.assert_outcomes(passed=1)
@@ -296,7 +296,7 @@ def test_multiple_post_load(pytester: pytest.Pytester) -> None:
             with patcher.mock(tmp_path) as loaded:
                 assert loaded["step1"] == 10
                 assert loaded["step2"] == 11
-        """,
+        """
     )
     result = pytester.runpytest()
     result.assert_outcomes(passed=1)
@@ -319,7 +319,7 @@ def test_post_load_case_dir(pytester: pytest.Pytester) -> None:
             (tmp_path / "data.json").write_text("1")
             with patcher.mock(tmp_path) as loaded:
                 assert loaded["dir_name"] == tmp_path.name
-        """,
+        """
     )
     result = pytester.runpytest()
     result.assert_outcomes(passed=1)
@@ -330,7 +330,7 @@ def test_add_file_patch_attr_new(pytester: pytest.Pytester) -> None:
     pytester.makepyfile(
         mymodule="""
         MAX_LENGTH = 9999
-        """,
+        """
     )
     pytester.makepyfile(
         """
@@ -349,7 +349,7 @@ def test_add_file_patch_attr_new(pytester: pytest.Pytester) -> None:
                 import mymodule
                 assert mymodule.MAX_LENGTH == 420
                 assert loaded["max_length.json"] == 420
-        """,
+        """
     )
     result = pytester.runpytest()
     result.assert_outcomes(passed=1)
@@ -361,7 +361,7 @@ def test_add_patch(pytester: pytest.Pytester) -> None:
         mymodule="""
         def fetch():
             raise NotImplementedError
-        """,
+        """
     )
     pytester.makepyfile(
         """
@@ -376,7 +376,7 @@ def test_add_patch(pytester: pytest.Pytester) -> None:
                 mymodule.fetch("arg1")
                 mock_obj = ctx["mymodule.fetch"]
                 mock_obj.assert_called_once_with("arg1")
-        """,
+        """
     )
     result = pytester.runpytest()
     result.assert_outcomes(passed=1)
@@ -388,7 +388,7 @@ def test_add_patch_with_kwargs(pytester: pytest.Pytester) -> None:
         mymodule="""
         def fetch():
             raise NotImplementedError
-        """,
+        """
     )
     pytester.makepyfile(
         """
@@ -403,7 +403,7 @@ def test_add_patch_with_kwargs(pytester: pytest.Pytester) -> None:
                 assert mymodule.fetch() == 1
                 assert mymodule.fetch() == 2
                 assert "fetcher" in ctx
-        """,
+        """
     )
     result = pytester.runpytest()
     result.assert_outcomes(passed=1)
@@ -417,7 +417,7 @@ def test_mixed_file_and_plain_patches(pytester: pytest.Pytester) -> None:
             raise NotImplementedError
         def send():
             raise NotImplementedError
-        """,
+        """
     )
     pytester.makepyfile(
         """
@@ -435,7 +435,7 @@ def test_mixed_file_and_plain_patches(pytester: pytest.Pytester) -> None:
                 mymodule.send("hello")
                 ctx["mymodule.send"].assert_called_once_with("hello")
                 assert ctx["data.json"] == {"key": "value"}
-        """,
+        """
     )
     result = pytester.runpytest()
     result.assert_outcomes(passed=1)

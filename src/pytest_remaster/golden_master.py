@@ -208,10 +208,7 @@ class GoldenMaster:
             )
         )
         diff_text = self._maybe_truncate(diff_lines)
-        pytest.fail(
-            f"Mismatch at {expected_path}:\n{diff_text}",
-            pytrace=False,
-        )
+        pytest.fail(f"Mismatch at {expected_path}:\n{diff_text}", pytrace=False)
 
     _VERBOSE_NO_TRUNCATE = 2
 
@@ -224,9 +221,7 @@ class GoldenMaster:
             return "".join(lines)
         max_lines = int(raw_lines or 0)
         max_chars = int(raw_chars or 0)
-        verbose = self._config.get_verbosity(
-            self._config.VERBOSITY_ASSERTIONS,
-        )
+        verbose = self._config.get_verbosity(self._config.VERBOSITY_ASSERTIONS)
         if verbose >= self._VERBOSE_NO_TRUNCATE or max_lines == max_chars == 0:
             return "".join(lines)
         if 0 < max_lines < len(lines):
