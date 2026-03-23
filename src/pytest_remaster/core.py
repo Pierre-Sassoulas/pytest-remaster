@@ -59,6 +59,10 @@ class CaseData:
         raise ValueError(msg)
 
 
+class MalformedTestCase(Exception):
+    """Raised when a discovered test case directory is missing required files."""
+
+
 class GoldenMaster:
     """Golden master comparison with optional auto-regeneration."""
 
@@ -100,7 +104,13 @@ class GoldenMaster:
         """
         expected_path = Path(expected_path)
         if callable(actual) and not isinstance(actual, str):
-            actual = actual()
+            try:
+                actual = actual()
+            except FileNotFoundError as exc:
+                raise MalformedTestCase(
+                    f"{expected_path.parent} — {exc.filename or exc}\n"
+                    f"  (directory was discovered as a test case but appears malformed)"
+                ) from exc
         actual_str = serializer(actual).rstrip()
 
         try:
@@ -145,7 +155,13 @@ class GoldenMaster:
             normalizer: Optional function applied before comparison.
 
         """
-        result = runner(case)
+        try:
+            result = runner(case)
+        except FileNotFoundError as exc:
+            raise MalformedTestCase(
+                f"{case.input} — {exc.filename or exc}\n"
+                f"  (directory was discovered as a test case but appears malformed)"
+            ) from exc
         for suffix, getter in extractors.items():
             self.check(
                 getter(result),
@@ -209,7 +225,14 @@ class GoldenMaster:
         """
         directory = Path(directory)
         if callable(actuals) and not isinstance(actuals, list):
-            actuals = list(actuals())
+            try:
+                actuals = list(actuals())
+            except FileNotFoundError as exc:
+                raise MalformedTestCase(
+                    f"{directory} — {exc.filename or exc}\n"
+                    f"  (directory was discovered as a test case"
+                    f" but appears malformed)"
+                ) from exc
 
         pattern = rf"expected_\d+{re.escape(suffix)}$"
         existing = sorted(

@@ -416,6 +416,92 @@ def test_discover_test_files(pytester: pytest.Pytester) -> None:
     result.assert_outcomes(passed=1)
 
 
+def test_malformed_test_case_check_callable(pytester: pytest.Pytester) -> None:
+    """check() with callable wraps FileNotFoundError as MalformedTestCase."""
+    pytester.makepyfile(
+        """
+        from pathlib import Path
+        from pytest_remaster import MalformedTestCase
+
+        def test_malformed(golden_master, tmp_path):
+            case_dir = tmp_path / "case"
+            case_dir.mkdir()
+            expected = case_dir / "expected.txt"
+            expected.write_text("hello\\n")
+
+            def bad_callable():
+                return (case_dir / "missing_input").read_text()
+
+            try:
+                golden_master.check(bad_callable, expected)
+                assert False, "should have raised"
+            except MalformedTestCase as exc:
+                assert "missing_input" in str(exc)
+                assert "malformed" in str(exc)
+        """
+    )
+    result = pytester.runpytest("--no-remaster")
+    result.assert_outcomes(passed=1)
+
+
+def test_malformed_test_case_check_all(pytester: pytest.Pytester) -> None:
+    """check_all() with callable wraps FileNotFoundError as MalformedTestCase."""
+    pytester.makepyfile(
+        """
+        from pathlib import Path
+        from pytest_remaster import MalformedTestCase
+
+        def test_malformed(golden_master, tmp_path):
+            case_dir = tmp_path / "case"
+            case_dir.mkdir()
+
+            def bad_callable():
+                return [(case_dir / "missing_input").read_text()]
+
+            try:
+                golden_master.check_all(bad_callable, case_dir)
+                assert False, "should have raised"
+            except MalformedTestCase as exc:
+                assert "missing_input" in str(exc)
+                assert "malformed" in str(exc)
+        """
+    )
+    result = pytester.runpytest("--no-remaster")
+    result.assert_outcomes(passed=1)
+
+
+def test_malformed_test_case_check_each(pytester: pytest.Pytester) -> None:
+    """check_each() wraps runner FileNotFoundError as MalformedTestCase."""
+    pytester.makepyfile(
+        """
+        from pathlib import Path
+        from pytest_remaster import CaseData, MalformedTestCase
+
+        def test_malformed(golden_master, tmp_path):
+            case_dir = tmp_path / "case"
+            case_dir.mkdir()
+            case = CaseData(input=case_dir)
+
+            def bad_runner(case):
+                return (case.input / "missing_input").read_text()
+
+            try:
+                golden_master.check_each(
+                    case,
+                    runner=bad_runner,
+                    extractors={".stdout": lambda r: r},
+                )
+                assert False, "should have raised"
+            except MalformedTestCase as exc:
+                assert "missing_input" in str(exc)
+                assert "case" in str(exc)
+                assert "malformed" in str(exc)
+        """
+    )
+    result = pytester.runpytest("--no-remaster")
+    result.assert_outcomes(passed=1)
+
+
 def test_file_patch_registry_loads_and_patches(pytester: pytest.Pytester) -> None:
     """FilePatchRegistry loads JSON files and patches targets."""
     pytester.makepyfile(
