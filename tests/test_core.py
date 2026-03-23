@@ -303,8 +303,9 @@ def test_check_directory_fewer_actuals_remaster(pytester: pytest.Pytester) -> No
         """
     )
     result = pytester.runpytest("--remaster")
-    # expected_1 is removed, expected_0 matches so no update needed
-    result.assert_outcomes(passed=1)
+    # expected_1 is removed after checks pass, reported at teardown
+    result.assert_outcomes(passed=1, errors=1)
+    result.stdout.fnmatch_lines(["*deleted*expected_1*"])
 
 
 def test_check_directory_more_actuals_remaster(pytester: pytest.Pytester) -> None:

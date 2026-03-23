@@ -214,10 +214,6 @@ class GoldenMaster:
             key=lambda p: int(re.search(r"\d+", p.name).group()),  # type: ignore[union-attr]
         )
 
-        if self._remaster and len(actuals) != len(existing):
-            for extra in existing[len(actuals) :]:
-                extra.unlink()
-
         for i, actual in enumerate(actuals):
             self.check(
                 actual,
@@ -225,6 +221,11 @@ class GoldenMaster:
                 serializer=serializer,
                 normalizer=normalizer,
             )
+
+        if self._remaster and len(actuals) < len(existing):
+            for extra in existing[len(actuals) :]:
+                extra.unlink()
+                self._updated.append(f"deleted: {extra}")
 
         if not self._remaster and len(actuals) < len(existing):
             extra_files = [p.name for p in existing[len(actuals) :]]
