@@ -124,6 +124,80 @@ def test_cli(
 All examples auto-update expected files on mismatch. Review the diff in git, rerun. Pass
 `--no-remaster` for strict comparison.
 
+## Version-specific expected files with `dimensions`
+
+When expected output varies by Python version, platform, or implementation, use
+`dimensions` to let pytest-remaster resolve the right file automatically.
+
+### How it works
+
+Given a base file and a set of dimensions, `check()` generates a priority-ordered chain
+of override paths and uses the most specific existing file for comparison. Remastering
+writes to the most specific path, keeping less specific files untouched. Redundant
+overrides (identical to a less specific file) are deleted automatically.
+
+```
+tests/functional/
+  arguments.py                # source to lint
+  arguments.txt               # generic expected output
+  arguments.312.txt           # Python 3.12 override
+  arguments.312.linux.txt     # Python 3.12 on Linux
+```
+
+The resolution chain for `dimensions={"version": "312", "platform": "linux"}`:
+
+1. `arguments.312.linux.txt` (most specific)
+2. `arguments.312.txt` (version only)
+3. `arguments.linux.txt` (platform only)
+4. `arguments.txt` (generic base)
+
+The first existing file is used for comparison. If none match, the base is used.
+
+### Example: linter with version-dependent output
+
+```python
+import sys
+
+import pytest
+from pathlib import Path
+
+from my_linter import lint
+
+from pytest_remaster import CaseData, GoldenMaster, discover_test_files
+
+FUNC_DIR = Path(__file__).parent / "functional"
+
+
+@pytest.mark.parametrize("case", discover_test_files(FUNC_DIR, "*.py"))
+def test_lint(case: CaseData, golden_master: GoldenMaster) -> None:
+    actual = lint(case.input)
+    golden_master.check(
+        actual,
+        case.expected(suffix=".txt"),
+        dimensions={
+            "version": f"{sys.version_info[0]}{sys.version_info[1]}",
+            "platform": sys.platform,
+        },
+    )
+```
+
+On mismatch, `--remaster` creates the most specific override (e.g.
+`arguments.312.linux.txt`). If the new file is identical to a less specific one (e.g.
+`arguments.312.txt`), it is removed as redundant. This way, only the files that truly
+differ between environments are kept.
+
+### Input file resolution with `resolve_with_override`
+
+`resolve_with_override(base, override)` returns `override` if it exists on disk,
+otherwise `base`. Useful for resolving input files (e.g. config files) that follow the
+same override pattern but are never remastered:
+
+```python
+from pytest_remaster import resolve_with_override
+
+rc_file = resolve_with_override("test.rc", override="test.312.rc")
+```
+
 ### Patching with `PatchRegistry`
 
 Load fixture files and set up mock patches:

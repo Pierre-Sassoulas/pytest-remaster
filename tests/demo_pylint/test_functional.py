@@ -1,13 +1,12 @@
 """Demo: pylint-like functional tests with version-specific expected output.
 
 Mirrors how pylint's functional tests work:
-- A ``.py`` source file is analysed by pylint
-- Expected output lives alongside it (``pep695.txt``)
-- A version-specific override (``pep695.311.txt``) captures output that
-  differs when targeting an older ``--py-version``
-
-``override_path`` lets pytest-remaster compare against the right file and
-remaster to the version-specific override without touching the generic base.
+- A ``.py`` source file is analysed by pylint with a custom plugin
+- Expected output lives alongside it with dimension-based overrides
+  (e.g. ``simple_module.311.linux.txt`` for Python 3.11 on Linux)
+- ``dimensions`` on ``check()`` lets pytest-remaster resolve the right
+  file, remaster to the most specific override, and deduplicate
+  redundant files automatically
 """
 
 from __future__ import annotations
@@ -19,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from pytest_remaster import GoldenMaster
+from pytest_remaster import CaseData, GoldenMaster, discover_test_files
 
 CASES_DIR = Path(__file__).parent / "cases"
 PLUGIN_DIR = str(Path(__file__).parent)
@@ -70,15 +69,16 @@ def cases(tmp_path: Path) -> Path:
     return dest
 
 
+@pytest.mark.parametrize("case", discover_test_files(CASES_DIR, "*.py"))
 @pytest.mark.parametrize("py_version", ["3.11", "3.12", "3.13", "3.14"])
 def test_pylint_functional_tests(  # pylint: disable=redefined-outer-name
-    cases: Path, golden_master: GoldenMaster, py_version: str
+    cases: Path, golden_master: GoldenMaster, case: CaseData, py_version: str
 ) -> None:
-    source = cases / "simple_module.py"
+    source = cases / case.input.name
     actual = _run_pylint(source, py_version)
-
-    ver = py_version.replace(".", "")
     base = source.with_suffix(".txt")
-    override = base.parent / f"{source.stem}.{ver}.txt"
-
-    golden_master.check(actual, base, override_path=override)
+    golden_master.check(
+        actual,
+        base,
+        dimensions={"version": py_version.replace(".", ""), "platform": sys.platform},
+    )

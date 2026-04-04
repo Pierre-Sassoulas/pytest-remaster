@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import difflib
+import itertools
 import json
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -65,6 +66,39 @@ def mock_calls_serializer(name: str) -> Callable[[Any], str]:
     return _serialize
 
 
+def _build_override_chain(base: str | Path, **dimensions: str) -> list[Path]:
+    """Build a priority-ordered list of override paths from *base* and *dimensions*.
+
+    Generates every non-empty subset of *dimensions* (most specific first)
+    and inserts the values as dot-separated segments between the stem and
+    the suffix of *base*.  Key insertion order determines priority.
+
+    Example::
+
+        _build_override_chain(
+            "a.txt",
+            version="312", platform="linux", implementation="cpython",
+        )
+        # [a.312.linux.cpython.txt,
+        #  a.312.linux.txt,
+        #  a.312.cpython.txt,
+        #  a.312.txt,
+        #  a.linux.cpython.txt,
+        #  a.linux.txt,
+        #  a.cpython.txt]
+
+    """
+    base = Path(base)
+    keys = list(dimensions)
+    result: list[Path] = []
+    # From all dimensions down to single dimension
+    for size in range(len(keys), 0, -1):
+        for combo in itertools.combinations(keys, size):
+            segment = ".".join(dimensions[k] for k in combo)
+            result.append(base.parent / f"{base.stem}.{segment}{base.suffix}")
+    return result
+
+
 def resolve_with_override(base: str | Path, override: str | Path | None = None) -> Path:
     """Return *override* if it exists on disk, otherwise *base*.
 
@@ -108,6 +142,7 @@ class GoldenMaster:
         expected_path: str | Path,
         *,
         override_path: str | Path | None = None,
+        dimensions: dict[str, str] | None = None,
         serializer: Callable[[Any], str] = str,
         normalizer: Callable[[str], str] | None = None,
     ) -> None:
@@ -115,13 +150,13 @@ class GoldenMaster:
 
         Args:
             actual: The actual value, or a callable that produces it.
-            expected_path: Path to the expected output file.
-            override_path: Optional version-specific override.  When given,
-                the override is checked first and used for comparison if it
-                exists; otherwise *expected_path* (the generic base) is used.
-                Remastering always writes to *override_path* when provided,
-                keeping the base file untouched.  Redundant overrides
-                (identical to the base) are cleaned up automatically.
+            expected_path: Path to the expected output file (generic base).
+            override_path: Optional single override path.  Mutually exclusive
+                with *dimensions*.
+            dimensions: Mapping of dimension names to values (e.g.
+                ``{"version": "312", "platform": "linux"}``).  Generates a
+                priority-ordered chain of override paths from most to least
+                specific.  Mutually exclusive with *override_path*.
             serializer: Converts actual value to string. Default: str().
             normalizer: Optional function applied to both actual and expected
                 strings before comparison. The normalized output is also
@@ -129,13 +164,15 @@ class GoldenMaster:
 
         """
         expected_path = Path(expected_path)
-        override = Path(override_path) if override_path is not None else None
+        if override_path is not None and dimensions is not None:
+            msg = "override_path and dimensions are mutually exclusive"
+            raise ValueError(msg)
+
+        chain = self._resolve_chain(expected_path, override_path, dimensions)
         actual_str = self._resolve_actual(actual, expected_path, serializer)
 
-        # Resolution: override takes precedence if it exists on disk
-        compare_path = (
-            override if override is not None and override.exists() else expected_path
-        )
+        # Resolution: first existing file in chain, else base
+        compare_path, fallback_paths = self._resolve_compare(expected_path, chain)
 
         try:
             expected_str = compare_path.read_text(encoding="utf-8").rstrip()
@@ -147,17 +184,39 @@ class GoldenMaster:
             return
 
         if self._content_matches(actual_str, expected_str, normalizer):
-            self._dedup_override(override, expected_path, normalizer)
+            self._dedup_chain(compare_path, fallback_paths, expected_path, normalizer)
             return
 
-        # Where to write: override when provided, else expected_path
-        write_path = override if override is not None else expected_path
+        # Where to write: first in chain (most specific), else base
+        write_path = chain[0] if chain else expected_path
         if self._remaster:
             write_str = normalizer(actual_str) if normalizer else actual_str
             self._remaster_file(write_str, expected_str, write_path)
-            self._dedup_override(override, expected_path, normalizer)
+            self._dedup_chain(write_path, fallback_paths, expected_path, normalizer)
         else:
             self._fail_mismatch(actual_str, expected_str, expected_path, write_path)
+
+    @staticmethod
+    def _resolve_chain(
+        expected_path: Path,
+        override_path: str | Path | None,
+        dimensions: dict[str, str] | None,
+    ) -> list[Path]:
+        if dimensions is not None:
+            return _build_override_chain(expected_path, **dimensions)
+        if override_path is not None:
+            return [Path(override_path)]
+        return []
+
+    @staticmethod
+    def _resolve_compare(
+        expected_path: Path, chain: Sequence[Path]
+    ) -> tuple[Path, list[Path]]:
+        """Return (compare_path, less_specific_paths) from the chain."""
+        for i, path in enumerate(chain):
+            if path.exists():
+                return path, list(chain[i + 1 :])
+        return expected_path, []
 
     @staticmethod
     def _resolve_actual(
@@ -238,27 +297,40 @@ class GoldenMaster:
             action = "updated" if existed else "created"
             self._updated.append(f"{action}: {write_path}")
 
-    def _dedup_override(
-        self, override: Path | None, base: Path, normalizer: Callable[[str], str] | None
+    def _dedup_chain(
+        self,
+        current: Path,
+        fallback_paths: list[Path],
+        base: Path,
+        normalizer: Callable[[str], str] | None,
     ) -> None:
-        """Delete *override* if it is identical to *base* (redundant)."""
-        if override is None or not override.exists() or not base.exists():
+        """Delete *current* if identical to any less-specific file."""
+        if not current.exists():
             return
-        override_content = override.read_text(encoding="utf-8").rstrip()
-        base_content = base.read_text(encoding="utf-8").rstrip()
+        # Check against each less-specific override, then the base
+        candidates = [p for p in fallback_paths if p.exists()]
+        candidates.append(base)
+        current_content = current.read_text(encoding="utf-8").rstrip()
         if normalizer:
-            override_content = normalizer(override_content)
-            base_content = normalizer(base_content)
-        if override_content != base_content:
+            current_content = normalizer(current_content)
+        for candidate in candidates:
+            if not candidate.exists() or candidate == current:
+                continue
+            candidate_content = candidate.read_text(encoding="utf-8").rstrip()
+            if normalizer:
+                candidate_content = normalizer(candidate_content)
+            if current_content != candidate_content:
+                continue
+            if self._remaster:
+                current.unlink()
+                self._updated.append(f"deleted (redundant): {current}")
+            else:
+                pytest.fail(
+                    f"{current} is identical to {candidate},"
+                    f" remove the redundant override.",
+                    pytrace=False,
+                )
             return
-        if self._remaster:
-            override.unlink()
-            self._updated.append(f"deleted (redundant): {override}")
-        else:
-            pytest.fail(
-                f"{override} is identical to {base}, remove the redundant override.",
-                pytrace=False,
-            )
 
     def _fail_mismatch(
         self,

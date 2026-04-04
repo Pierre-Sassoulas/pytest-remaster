@@ -681,6 +681,194 @@ def test_override_no_base_creates_override(pytester: pytest.Pytester) -> None:
     result.stdout.fnmatch_lines(["*created*a.314.txt*"])
 
 
+def test_build_override_chain(pytester: pytest.Pytester) -> None:
+    """_build_override_chain generates powerset in priority order."""
+    pytester.makepyfile(
+        """
+        from pathlib import Path
+        from pytest_remaster.golden_master import _build_override_chain
+
+        def test_chain():
+            chain = _build_override_chain(
+                Path("/d/a.txt"), version="312", platform="linux",
+            )
+            names = [p.name for p in chain]
+            assert names == [
+                "a.312.linux.txt",
+                "a.312.txt",
+                "a.linux.txt",
+            ]
+        """
+    )
+    result = pytester.runpytest()
+    result.assert_outcomes(passed=1)
+
+
+def test_build_override_chain_three_dimensions(pytester: pytest.Pytester) -> None:
+    """_build_override_chain with three dimensions produces 7 entries."""
+    pytester.makepyfile(
+        """
+        from pathlib import Path
+        from pytest_remaster.golden_master import _build_override_chain
+
+        def test_chain():
+            chain = _build_override_chain(
+                Path("/d/a.txt"),
+                version="312", platform="linux", implementation="cpython",
+            )
+            names = [p.name for p in chain]
+            assert names == [
+                "a.312.linux.cpython.txt",
+                "a.312.linux.txt",
+                "a.312.cpython.txt",
+                "a.linux.cpython.txt",
+                "a.312.txt",
+                "a.linux.txt",
+                "a.cpython.txt",
+            ]
+        """
+    )
+    result = pytester.runpytest()
+    result.assert_outcomes(passed=1)
+
+
+def test_dimensions_resolves_most_specific(pytester: pytest.Pytester) -> None:
+    """check() with dimensions uses the most specific existing file."""
+    pytester.makepyfile(
+        """
+        from pathlib import Path
+
+        def test_resolve(golden_master, tmp_path):
+            base = tmp_path / "a.txt"
+            base.write_text("generic\\n")
+            specific = tmp_path / "a.312.linux.txt"
+            specific.write_text("specific\\n")
+            golden_master.check(
+                "specific", base,
+                dimensions={"version": "312", "platform": "linux"},
+            )
+        """
+    )
+    result = pytester.runpytest("--no-remaster")
+    result.assert_outcomes(passed=1)
+
+
+def test_dimensions_falls_back_to_less_specific(pytester: pytest.Pytester) -> None:
+    """check() with dimensions falls back through the chain."""
+    pytester.makepyfile(
+        """
+        from pathlib import Path
+
+        def test_fallback(golden_master, tmp_path):
+            base = tmp_path / "a.txt"
+            base.write_text("generic\\n")
+            # Only version-specific exists, no version+platform
+            version_only = tmp_path / "a.312.txt"
+            version_only.write_text("version output\\n")
+            golden_master.check(
+                "version output", base,
+                dimensions={"version": "312", "platform": "linux"},
+            )
+        """
+    )
+    result = pytester.runpytest("--no-remaster")
+    result.assert_outcomes(passed=1)
+
+
+def test_dimensions_falls_back_to_base(pytester: pytest.Pytester) -> None:
+    """check() with dimensions falls back to base when no overrides exist."""
+    pytester.makepyfile(
+        """
+        from pathlib import Path
+
+        def test_fallback(golden_master, tmp_path):
+            base = tmp_path / "a.txt"
+            base.write_text("generic\\n")
+            golden_master.check(
+                "generic", base,
+                dimensions={"version": "312", "platform": "linux"},
+            )
+        """
+    )
+    result = pytester.runpytest("--no-remaster")
+    result.assert_outcomes(passed=1)
+
+
+def test_dimensions_remaster_writes_most_specific(pytester: pytest.Pytester) -> None:
+    """check() with dimensions remasters to the most specific path."""
+    pytester.makepyfile(
+        """
+        from pathlib import Path
+
+        def test_remaster(golden_master, tmp_path):
+            base = tmp_path / "a.txt"
+            base.write_text("generic\\n")
+            golden_master.check(
+                "new output", base,
+                dimensions={"version": "312", "platform": "linux"},
+            )
+            most_specific = tmp_path / "a.312.linux.txt"
+            assert most_specific.read_text() == "new output\\n"
+            assert base.read_text() == "generic\\n"
+        """
+    )
+    result = pytester.runpytest("--remaster")
+    result.assert_outcomes(passed=1, errors=1)
+    result.stdout.fnmatch_lines(["*created*a.312.linux.txt*"])
+
+
+def test_dimensions_dedup_against_less_specific(pytester: pytest.Pytester) -> None:
+    """check() deduplicates against less-specific existing overrides."""
+    pytester.makepyfile(
+        """
+        from pathlib import Path
+
+        def test_dedup(golden_master, tmp_path):
+            base = tmp_path / "a.txt"
+            base.write_text("generic\\n")
+            # Both overrides have the same content
+            (tmp_path / "a.312.linux.txt").write_text("same\\n")
+            (tmp_path / "a.312.txt").write_text("same\\n")
+            golden_master.check(
+                "same", base,
+                dimensions={"version": "312", "platform": "linux"},
+            )
+            # Most specific removed because it matches less specific
+            assert not (tmp_path / "a.312.linux.txt").exists()
+            assert (tmp_path / "a.312.txt").exists()
+        """
+    )
+    result = pytester.runpytest("--remaster")
+    result.assert_outcomes(passed=1, errors=1)
+    result.stdout.fnmatch_lines(["*deleted*redundant*a.312.linux.txt*"])
+
+
+def test_dimensions_mutually_exclusive_with_override_path(
+    pytester: pytest.Pytester,
+) -> None:
+    """check() raises ValueError when both override_path and dimensions given."""
+    pytester.makepyfile(
+        """
+        from pathlib import Path
+
+        def test_exclusive(golden_master, tmp_path):
+            base = tmp_path / "a.txt"
+            base.write_text("content\\n")
+            try:
+                golden_master.check(
+                    "content", base,
+                    override_path=tmp_path / "a.312.txt",
+                    dimensions={"version": "312"},
+                )
+                assert False, "should have raised"
+            except ValueError as exc:
+                assert "mutually exclusive" in str(exc)
+        """
+    )
+    result = pytester.runpytest("--no-remaster")
+    result.assert_outcomes(passed=1)
+
+
 def test_malformed_test_case_check_callable(pytester: pytest.Pytester) -> None:
     """check() with callable wraps FileNotFoundError as MalformedTestCase."""
     pytester.makepyfile(
