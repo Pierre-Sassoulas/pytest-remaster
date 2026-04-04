@@ -65,6 +65,18 @@ def mock_calls_serializer(name: str) -> Callable[[Any], str]:
     return _serialize
 
 
+def resolve_with_override(base: str | Path, override: str | Path | None = None) -> Path:
+    """Return *override* if it exists on disk, otherwise *base*.
+
+    Used for version-specific file resolution: *override* is an exact-match
+    file (e.g. ``a.314.txt`` for Python 3.14) and *base* is the generic
+    fallback (e.g. ``a.txt``).
+    """
+    if override is not None and Path(override).exists():
+        return Path(override)
+    return Path(base)
+
+
 class MalformedTestCase(Exception):
     """Raised when a discovered test case directory is missing required files."""
 
@@ -95,6 +107,7 @@ class GoldenMaster:
         actual: Any | Callable[[], Any],
         expected_path: str | Path,
         *,
+        override_path: str | Path | None = None,
         serializer: Callable[[Any], str] = str,
         normalizer: Callable[[str], str] | None = None,
     ) -> None:
@@ -103,6 +116,12 @@ class GoldenMaster:
         Args:
             actual: The actual value, or a callable that produces it.
             expected_path: Path to the expected output file.
+            override_path: Optional version-specific override.  When given,
+                the override is checked first and used for comparison if it
+                exists; otherwise *expected_path* (the generic base) is used.
+                Remastering always writes to *override_path* when provided,
+                keeping the base file untouched.  Redundant overrides
+                (identical to the base) are cleaned up automatically.
             serializer: Converts actual value to string. Default: str().
             normalizer: Optional function applied to both actual and expected
                 strings before comparison. The normalized output is also
@@ -110,18 +129,16 @@ class GoldenMaster:
 
         """
         expected_path = Path(expected_path)
-        if callable(actual) and not isinstance(actual, str):
-            try:
-                actual = actual()
-            except FileNotFoundError as exc:
-                raise MalformedTestCase(
-                    f"{expected_path.parent} — {exc.filename or exc}\n"
-                    f"  (directory was discovered as a test case but appears malformed)"
-                ) from exc
-        actual_str = serializer(actual).rstrip()
+        override = Path(override_path) if override_path is not None else None
+        actual_str = self._resolve_actual(actual, expected_path, serializer)
+
+        # Resolution: override takes precedence if it exists on disk
+        compare_path = (
+            override if override is not None and override.exists() else expected_path
+        )
 
         try:
-            expected_str = expected_path.read_text(encoding="utf-8").rstrip()
+            expected_str = compare_path.read_text(encoding="utf-8").rstrip()
         except FileNotFoundError:
             expected_str = None
 
@@ -129,17 +146,47 @@ class GoldenMaster:
         if not actual_str and expected_str is None:
             return
 
-        if expected_str is not None:
-            actual_cmp = normalizer(actual_str) if normalizer else actual_str
-            expected_cmp = normalizer(expected_str) if normalizer else expected_str
-            if actual_cmp == expected_cmp:
-                return
+        if self._content_matches(actual_str, expected_str, normalizer):
+            self._dedup_override(override, expected_path, normalizer)
+            return
 
+        # Where to write: override when provided, else expected_path
+        write_path = override if override is not None else expected_path
         if self._remaster:
             write_str = normalizer(actual_str) if normalizer else actual_str
-            self._remaster_file(write_str, expected_str, expected_path)
+            self._remaster_file(write_str, expected_str, write_path)
+            self._dedup_override(override, expected_path, normalizer)
         else:
-            self._fail_mismatch(actual_str, expected_str, expected_path)
+            self._fail_mismatch(actual_str, expected_str, expected_path, write_path)
+
+    @staticmethod
+    def _resolve_actual(
+        actual: Any | Callable[[], Any],
+        expected_path: Path,
+        serializer: Callable[[Any], str],
+    ) -> str:
+        if callable(actual) and not isinstance(actual, str):
+            try:
+                actual = actual()
+            except FileNotFoundError as exc:
+                raise MalformedTestCase(
+                    f"{expected_path.parent} — {exc.filename or exc}\n"
+                    f"  (directory was discovered as a test case"
+                    f" but appears malformed)"
+                ) from exc
+        return serializer(actual).rstrip()
+
+    @staticmethod
+    def _content_matches(
+        actual_str: str,
+        expected_str: str | None,
+        normalizer: Callable[[str], str] | None,
+    ) -> bool:
+        if expected_str is None:
+            return False
+        actual_cmp = normalizer(actual_str) if normalizer else actual_str
+        expected_cmp = normalizer(expected_str) if normalizer else expected_str
+        return actual_cmp == expected_cmp
 
     def check_each(
         self,
@@ -178,37 +225,68 @@ class GoldenMaster:
             )
 
     def _remaster_file(
-        self, actual_str: str, expected_str: str | None, expected_path: Path
+        self, actual_str: str, expected_str: str | None, write_path: Path
     ) -> None:
         if not actual_str:
-            expected_path.unlink(missing_ok=True)
+            write_path.unlink(missing_ok=True)
             if expected_str is not None:
-                self._updated.append(f"deleted: {expected_path}")
+                self._updated.append(f"deleted: {write_path}")
         else:
-            expected_path.parent.mkdir(parents=True, exist_ok=True)
-            expected_path.write_text(actual_str + "\n", encoding="utf-8")
-            action = "created" if expected_str is None else "updated"
-            self._updated.append(f"{action}: {expected_path}")
+            write_path.parent.mkdir(parents=True, exist_ok=True)
+            existed = write_path.exists()
+            write_path.write_text(actual_str + "\n", encoding="utf-8")
+            action = "updated" if existed else "created"
+            self._updated.append(f"{action}: {write_path}")
+
+    def _dedup_override(
+        self, override: Path | None, base: Path, normalizer: Callable[[str], str] | None
+    ) -> None:
+        """Delete *override* if it is identical to *base* (redundant)."""
+        if override is None or not override.exists() or not base.exists():
+            return
+        override_content = override.read_text(encoding="utf-8").rstrip()
+        base_content = base.read_text(encoding="utf-8").rstrip()
+        if normalizer:
+            override_content = normalizer(override_content)
+            base_content = normalizer(base_content)
+        if override_content != base_content:
+            return
+        if self._remaster:
+            override.unlink()
+            self._updated.append(f"deleted (redundant): {override}")
+        else:
+            pytest.fail(
+                f"{override} is identical to {base}, remove the redundant override.",
+                pytrace=False,
+            )
 
     def _fail_mismatch(
-        self, actual_str: str, expected_str: str | None, expected_path: Path
+        self,
+        actual_str: str,
+        expected_str: str | None,
+        compare_path: Path,
+        write_path: Path,
     ) -> None:
         if expected_str is None:
             pytest.fail(
-                f"Expected file {expected_path} does not exist. "
-                f"Run with --remaster to create it.",
+                f"Expected file {compare_path} does not exist. "
+                f"Run with --remaster to create {write_path}.",
                 pytrace=False,
             )
         diff_lines = list(
             difflib.unified_diff(
                 expected_str.splitlines(keepends=True),
                 actual_str.splitlines(keepends=True),
-                fromfile=str(expected_path),
+                fromfile=str(compare_path),
                 tofile="actual",
             )
         )
         diff_text = self._maybe_truncate(diff_lines)
-        pytest.fail(f"Mismatch at {expected_path}:\n{diff_text}", pytrace=False)
+        pytest.fail(
+            f"Mismatch at {compare_path}:\n{diff_text}\n"
+            f"Run with --remaster to update {write_path}.",
+            pytrace=False,
+        )
 
     _VERBOSE_NO_TRUNCATE = 2
 

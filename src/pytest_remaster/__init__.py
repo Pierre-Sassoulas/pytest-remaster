@@ -6,6 +6,7 @@ from pytest_remaster.golden_master import (
     MalformedTestCase,
     json_normalizer,
     mock_calls_serializer,
+    resolve_with_override,
     whitespace_normalizer,
 )
 from pytest_remaster.patching import PatchRegistry
@@ -19,5 +20,6 @@ __all__ = [
     "discover_test_files",
     "json_normalizer",
     "mock_calls_serializer",
+    "resolve_with_override",
     "whitespace_normalizer",
 ]

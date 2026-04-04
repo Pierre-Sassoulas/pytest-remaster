@@ -448,6 +448,239 @@ def test_check_directory_count_mismatch_no_remaster(pytester: pytest.Pytester) -
     result.stdout.fnmatch_lines(["*Expected 3 results but got 1*"])
 
 
+def test_resolve_with_override_exists(pytester: pytest.Pytester) -> None:
+    """resolve_with_override returns override when it exists."""
+    pytester.makepyfile(
+        """
+        from pathlib import Path
+        from pytest_remaster import resolve_with_override
+
+        def test_resolve(tmp_path):
+            base = tmp_path / "a.txt"
+            override = tmp_path / "a.314.txt"
+            base.write_text("base\\n")
+            override.write_text("override\\n")
+            assert resolve_with_override(base, override) == override
+        """
+    )
+    result = pytester.runpytest()
+    result.assert_outcomes(passed=1)
+
+
+def test_resolve_with_override_missing(pytester: pytest.Pytester) -> None:
+    """resolve_with_override returns base when override doesn't exist."""
+    pytester.makepyfile(
+        """
+        from pathlib import Path
+        from pytest_remaster import resolve_with_override
+
+        def test_resolve(tmp_path):
+            base = tmp_path / "a.txt"
+            override = tmp_path / "a.314.txt"
+            base.write_text("base\\n")
+            assert resolve_with_override(base, override) == base
+        """
+    )
+    result = pytester.runpytest()
+    result.assert_outcomes(passed=1)
+
+
+def test_resolve_with_override_none(pytester: pytest.Pytester) -> None:
+    """resolve_with_override returns base when override is None."""
+    pytester.makepyfile(
+        """
+        from pathlib import Path
+        from pytest_remaster import resolve_with_override
+
+        def test_resolve(tmp_path):
+            base = tmp_path / "a.txt"
+            base.write_text("base\\n")
+            assert resolve_with_override(base) == base
+        """
+    )
+    result = pytester.runpytest()
+    result.assert_outcomes(passed=1)
+
+
+def test_override_exists_and_matches(pytester: pytest.Pytester) -> None:
+    """check() with override_path uses override when it exists and matches."""
+    pytester.makepyfile(
+        """
+        from pathlib import Path
+
+        def test_override(golden_master, tmp_path):
+            base = tmp_path / "a.txt"
+            override = tmp_path / "a.314.txt"
+            base.write_text("generic output\\n")
+            override.write_text("version-specific output\\n")
+            golden_master.check(
+                "version-specific output", base, override_path=override
+            )
+        """
+    )
+    result = pytester.runpytest("--no-remaster")
+    result.assert_outcomes(passed=1)
+
+
+def test_override_missing_falls_back_to_base(pytester: pytest.Pytester) -> None:
+    """check() with override_path falls back to base when override missing."""
+    pytester.makepyfile(
+        """
+        from pathlib import Path
+
+        def test_fallback(golden_master, tmp_path):
+            base = tmp_path / "a.txt"
+            override = tmp_path / "a.314.txt"
+            base.write_text("generic output\\n")
+            golden_master.check("generic output", base, override_path=override)
+        """
+    )
+    result = pytester.runpytest("--no-remaster")
+    result.assert_outcomes(passed=1)
+
+
+def test_override_mismatch_remaster_writes_override(pytester: pytest.Pytester) -> None:
+    """check() remasters to override_path, not base."""
+    pytester.makepyfile(
+        """
+        from pathlib import Path
+
+        def test_remaster(golden_master, tmp_path):
+            base = tmp_path / "a.txt"
+            override = tmp_path / "a.314.txt"
+            base.write_text("generic output\\n")
+            golden_master.check("new output", base, override_path=override)
+            # Override created, base untouched
+            assert override.read_text() == "new output\\n"
+            assert base.read_text() == "generic output\\n"
+        """
+    )
+    result = pytester.runpytest("--remaster")
+    result.assert_outcomes(passed=1, errors=1)
+    result.stdout.fnmatch_lines(["*created*a.314.txt*"])
+
+
+def test_override_exists_mismatch_remaster(pytester: pytest.Pytester) -> None:
+    """check() updates existing override, not base."""
+    pytester.makepyfile(
+        """
+        from pathlib import Path
+
+        def test_remaster(golden_master, tmp_path):
+            base = tmp_path / "a.txt"
+            override = tmp_path / "a.314.txt"
+            base.write_text("generic output\\n")
+            override.write_text("old 3.14 output\\n")
+            golden_master.check("new 3.14 output", base, override_path=override)
+            assert override.read_text() == "new 3.14 output\\n"
+            assert base.read_text() == "generic output\\n"
+        """
+    )
+    result = pytester.runpytest("--remaster")
+    result.assert_outcomes(passed=1, errors=1)
+    result.stdout.fnmatch_lines(["*updated*a.314.txt*"])
+
+
+def test_override_mismatch_no_remaster_hints_override(
+    pytester: pytest.Pytester,
+) -> None:
+    """check() strict mode hints at creating override_path."""
+    pytester.makepyfile(
+        """
+        from pathlib import Path
+
+        def test_hint(golden_master, tmp_path):
+            base = tmp_path / "a.txt"
+            override = tmp_path / "a.314.txt"
+            base.write_text("generic output\\n")
+            golden_master.check("new output", base, override_path=override)
+        """
+    )
+    result = pytester.runpytest("--no-remaster")
+    result.assert_outcomes(failed=1)
+    result.stdout.fnmatch_lines(["*--remaster*a.314.txt*"])
+
+
+def test_override_redundant_remaster_deletes(pytester: pytest.Pytester) -> None:
+    """check() in remaster mode deletes override identical to base."""
+    pytester.makepyfile(
+        """
+        from pathlib import Path
+
+        def test_dedup(golden_master, tmp_path):
+            base = tmp_path / "a.txt"
+            override = tmp_path / "a.314.txt"
+            base.write_text("same content\\n")
+            override.write_text("same content\\n")
+            golden_master.check("same content", base, override_path=override)
+            assert not override.exists()
+        """
+    )
+    result = pytester.runpytest("--remaster")
+    result.assert_outcomes(passed=1, errors=1)
+    result.stdout.fnmatch_lines(["*deleted*redundant*a.314.txt*"])
+
+
+def test_override_redundant_no_remaster_fails(pytester: pytest.Pytester) -> None:
+    """check() in strict mode fails when override is identical to base."""
+    pytester.makepyfile(
+        """
+        from pathlib import Path
+
+        def test_dedup(golden_master, tmp_path):
+            base = tmp_path / "a.txt"
+            override = tmp_path / "a.314.txt"
+            base.write_text("same content\\n")
+            override.write_text("same content\\n")
+            golden_master.check("same content", base, override_path=override)
+        """
+    )
+    result = pytester.runpytest("--no-remaster")
+    result.assert_outcomes(failed=1)
+    result.stdout.fnmatch_lines(["*identical*redundant*"])
+
+
+def test_override_remaster_dedup_after_write(pytester: pytest.Pytester) -> None:
+    """After remastering override, if it matches base, it gets removed."""
+    pytester.makepyfile(
+        """
+        from pathlib import Path
+
+        def test_dedup_after_write(golden_master, tmp_path):
+            base = tmp_path / "a.txt"
+            override = tmp_path / "a.314.txt"
+            # Base already has the "new" content; override will be written
+            # with same content then deduped
+            base.write_text("new output\\n")
+            override.write_text("old output\\n")
+            golden_master.check("new output", base, override_path=override)
+            assert not override.exists()
+        """
+    )
+    result = pytester.runpytest("--remaster")
+    result.assert_outcomes(passed=1, errors=1)
+    result.stdout.fnmatch_lines(["*deleted*redundant*a.314.txt*"])
+
+
+def test_override_no_base_creates_override(pytester: pytest.Pytester) -> None:
+    """check() creates override when neither base nor override exist."""
+    pytester.makepyfile(
+        """
+        from pathlib import Path
+
+        def test_no_base(golden_master, tmp_path):
+            base = tmp_path / "a.txt"
+            override = tmp_path / "a.314.txt"
+            golden_master.check("new output", base, override_path=override)
+            assert override.read_text() == "new output\\n"
+            assert not base.exists()
+        """
+    )
+    result = pytester.runpytest("--remaster")
+    result.assert_outcomes(passed=1, errors=1)
+    result.stdout.fnmatch_lines(["*created*a.314.txt*"])
+
+
 def test_malformed_test_case_check_callable(pytester: pytest.Pytester) -> None:
     """check() with callable wraps FileNotFoundError as MalformedTestCase."""
     pytester.makepyfile(

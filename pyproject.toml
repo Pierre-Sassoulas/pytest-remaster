@@ -64,6 +64,11 @@ lint.ignore = [
   "PLC0415", # import-outside-toplevel
   "PLR0913", # too-many-arguments
 ]
+lint.per-file-ignores."tests/demo_pylint/platform_checker.py" = [
+  "D102",   # pylint checker methods don't need docstrings
+  "D401",   # pylint register() docstring is conventional
+  "RUF012", # pylint checker class attrs are mutable by convention
+]
 lint.isort.split-on-trailing-comma = false
 
 [tool.pylint]
