@@ -843,6 +843,30 @@ def test_dimensions_dedup_against_less_specific(pytester: pytest.Pytester) -> No
     result.stdout.fnmatch_lines(["*deleted*redundant*a.312.linux.txt*"])
 
 
+def test_dimensions_new_test_creates_base_file(pytester: pytest.Pytester) -> None:
+    """check() with dimensions creates the base file for new tests (no files exist)."""
+    pytester.makepyfile(
+        """
+        from pathlib import Path
+
+        def test_new(golden_master, tmp_path):
+            base = tmp_path / "test.txt"
+            golden_master.check(
+                "new output", base,
+                dimensions={"version": "314", "platform": "linux"},
+            )
+            # Base file should be created, not the most specific override
+            assert base.read_text() == "new output\\n"
+            assert not (tmp_path / "test.314.linux.txt").exists()
+            assert not (tmp_path / "test.314.txt").exists()
+            assert not (tmp_path / "test.linux.txt").exists()
+        """
+    )
+    result = pytester.runpytest("--remaster")
+    result.assert_outcomes(passed=1, errors=1)
+    result.stdout.fnmatch_lines(["*created*test.txt*"])
+
+
 def test_dimensions_mutually_exclusive_with_override_path(
     pytester: pytest.Pytester,
 ) -> None:

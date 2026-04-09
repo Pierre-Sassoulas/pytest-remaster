@@ -187,8 +187,11 @@ class GoldenMaster:
             self._dedup_chain(compare_path, fallback_paths, expected_path, normalizer)
             return
 
-        # Where to write: first in chain (most specific), else base
-        write_path = chain[0] if chain else expected_path
+        # New test with dimensions (no files exist): create the base file.
+        # Existing test or explicit override_path: write to chain[0].
+        write_path = expected_path
+        if chain and not (dimensions is not None and expected_str is None):
+            write_path = chain[0]
         if self._remaster:
             write_str = normalizer(actual_str) if normalizer else actual_str
             self._remaster_file(write_str, expected_str, write_path)
