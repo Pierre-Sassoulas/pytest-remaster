@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import difflib
+import itertools
 import json
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -65,6 +66,51 @@ def mock_calls_serializer(name: str) -> Callable[[Any], str]:
     return _serialize
 
 
+def _build_override_chain(base: str | Path, **dimensions: str) -> list[Path]:
+    """Build a priority-ordered list of override paths from *base* and *dimensions*.
+
+    Generates every non-empty subset of *dimensions* (most specific first)
+    and inserts the values as dot-separated segments between the stem and
+    the suffix of *base*.  Key insertion order determines priority.
+
+    Example::
+
+        _build_override_chain(
+            "a.txt",
+            version="312", platform="linux", implementation="cpython",
+        )
+        # [a.312.linux.cpython.txt,
+        #  a.312.linux.txt,
+        #  a.312.cpython.txt,
+        #  a.312.txt,
+        #  a.linux.cpython.txt,
+        #  a.linux.txt,
+        #  a.cpython.txt]
+
+    """
+    base = Path(base)
+    keys = list(dimensions)
+    result: list[Path] = []
+    # From all dimensions down to single dimension
+    for size in range(len(keys), 0, -1):
+        for combo in itertools.combinations(keys, size):
+            segment = ".".join(dimensions[k] for k in combo)
+            result.append(base.parent / f"{base.stem}.{segment}{base.suffix}")
+    return result
+
+
+def resolve_with_override(base: str | Path, override: str | Path | None = None) -> Path:
+    """Return *override* if it exists on disk, otherwise *base*.
+
+    Used for version-specific file resolution: *override* is an exact-match
+    file (e.g. ``a.314.txt`` for Python 3.14) and *base* is the generic
+    fallback (e.g. ``a.txt``).
+    """
+    if override is not None and Path(override).exists():
+        return Path(override)
+    return Path(base)
+
+
 class MalformedTestCase(Exception):
     """Raised when a discovered test case directory is missing required files."""
 
@@ -95,6 +141,8 @@ class GoldenMaster:
         actual: Any | Callable[[], Any],
         expected_path: str | Path,
         *,
+        override_path: str | Path | None = None,
+        dimensions: dict[str, str] | None = None,
         serializer: Callable[[Any], str] = str,
         normalizer: Callable[[str], str] | None = None,
     ) -> None:
@@ -102,7 +150,13 @@ class GoldenMaster:
 
         Args:
             actual: The actual value, or a callable that produces it.
-            expected_path: Path to the expected output file.
+            expected_path: Path to the expected output file (generic base).
+            override_path: Optional single override path.  Mutually exclusive
+                with *dimensions*.
+            dimensions: Mapping of dimension names to values (e.g.
+                ``{"version": "312", "platform": "linux"}``).  Generates a
+                priority-ordered chain of override paths from most to least
+                specific.  Mutually exclusive with *override_path*.
             serializer: Converts actual value to string. Default: str().
             normalizer: Optional function applied to both actual and expected
                 strings before comparison. The normalized output is also
@@ -110,18 +164,18 @@ class GoldenMaster:
 
         """
         expected_path = Path(expected_path)
-        if callable(actual) and not isinstance(actual, str):
-            try:
-                actual = actual()
-            except FileNotFoundError as exc:
-                raise MalformedTestCase(
-                    f"{expected_path.parent} — {exc.filename or exc}\n"
-                    f"  (directory was discovered as a test case but appears malformed)"
-                ) from exc
-        actual_str = serializer(actual).rstrip()
+        if override_path is not None and dimensions is not None:
+            msg = "override_path and dimensions are mutually exclusive"
+            raise ValueError(msg)
+
+        chain = self._resolve_chain(expected_path, override_path, dimensions)
+        actual_str = self._resolve_actual(actual, expected_path, serializer)
+
+        # Resolution: first existing file in chain, else base
+        compare_path, fallback_paths = self._resolve_compare(expected_path, chain)
 
         try:
-            expected_str = expected_path.read_text(encoding="utf-8").rstrip()
+            expected_str = compare_path.read_text(encoding="utf-8").rstrip()
         except FileNotFoundError:
             expected_str = None
 
@@ -129,17 +183,72 @@ class GoldenMaster:
         if not actual_str and expected_str is None:
             return
 
-        if expected_str is not None:
-            actual_cmp = normalizer(actual_str) if normalizer else actual_str
-            expected_cmp = normalizer(expected_str) if normalizer else expected_str
-            if actual_cmp == expected_cmp:
-                return
+        if self._content_matches(actual_str, expected_str, normalizer):
+            self._dedup_chain(compare_path, fallback_paths, expected_path, normalizer)
+            return
 
+        # New test with dimensions (no files exist): create the base file.
+        # Existing test or explicit override_path: write to chain[0].
+        write_path = expected_path
+        if chain and not (dimensions is not None and expected_str is None):
+            write_path = chain[0]
         if self._remaster:
             write_str = normalizer(actual_str) if normalizer else actual_str
-            self._remaster_file(write_str, expected_str, expected_path)
+            self._remaster_file(write_str, expected_str, write_path)
+            self._dedup_chain(write_path, fallback_paths, expected_path, normalizer)
         else:
-            self._fail_mismatch(actual_str, expected_str, expected_path)
+            self._fail_mismatch(actual_str, expected_str, expected_path, write_path)
+
+    @staticmethod
+    def _resolve_chain(
+        expected_path: Path,
+        override_path: str | Path | None,
+        dimensions: dict[str, str] | None,
+    ) -> list[Path]:
+        if dimensions is not None:
+            return _build_override_chain(expected_path, **dimensions)
+        if override_path is not None:
+            return [Path(override_path)]
+        return []
+
+    @staticmethod
+    def _resolve_compare(
+        expected_path: Path, chain: Sequence[Path]
+    ) -> tuple[Path, list[Path]]:
+        """Return (compare_path, less_specific_paths) from the chain."""
+        for i, path in enumerate(chain):
+            if path.exists():
+                return path, list(chain[i + 1 :])
+        return expected_path, []
+
+    @staticmethod
+    def _resolve_actual(
+        actual: Any | Callable[[], Any],
+        expected_path: Path,
+        serializer: Callable[[Any], str],
+    ) -> str:
+        if callable(actual) and not isinstance(actual, str):
+            try:
+                actual = actual()
+            except FileNotFoundError as exc:
+                raise MalformedTestCase(
+                    f"{expected_path.parent} — {exc.filename or exc}\n"
+                    f"  (directory was discovered as a test case"
+                    f" but appears malformed)"
+                ) from exc
+        return serializer(actual).rstrip()
+
+    @staticmethod
+    def _content_matches(
+        actual_str: str,
+        expected_str: str | None,
+        normalizer: Callable[[str], str] | None,
+    ) -> bool:
+        if expected_str is None:
+            return False
+        actual_cmp = normalizer(actual_str) if normalizer else actual_str
+        expected_cmp = normalizer(expected_str) if normalizer else expected_str
+        return actual_cmp == expected_cmp
 
     def check_each(
         self,
@@ -178,37 +287,81 @@ class GoldenMaster:
             )
 
     def _remaster_file(
-        self, actual_str: str, expected_str: str | None, expected_path: Path
+        self, actual_str: str, expected_str: str | None, write_path: Path
     ) -> None:
         if not actual_str:
-            expected_path.unlink(missing_ok=True)
+            write_path.unlink(missing_ok=True)
             if expected_str is not None:
-                self._updated.append(f"deleted: {expected_path}")
+                self._updated.append(f"deleted: {write_path}")
         else:
-            expected_path.parent.mkdir(parents=True, exist_ok=True)
-            expected_path.write_text(actual_str + "\n", encoding="utf-8")
-            action = "created" if expected_str is None else "updated"
-            self._updated.append(f"{action}: {expected_path}")
+            write_path.parent.mkdir(parents=True, exist_ok=True)
+            existed = write_path.exists()
+            write_path.write_text(actual_str + "\n", encoding="utf-8")
+            action = "updated" if existed else "created"
+            self._updated.append(f"{action}: {write_path}")
+
+    def _dedup_chain(
+        self,
+        current: Path,
+        fallback_paths: list[Path],
+        base: Path,
+        normalizer: Callable[[str], str] | None,
+    ) -> None:
+        """Delete *current* if identical to any less-specific file."""
+        if not current.exists():
+            return
+        # Check against each less-specific override, then the base
+        candidates = [p for p in fallback_paths if p.exists()]
+        candidates.append(base)
+        current_content = current.read_text(encoding="utf-8").rstrip()
+        if normalizer:
+            current_content = normalizer(current_content)
+        for candidate in candidates:
+            if not candidate.exists() or candidate == current:
+                continue
+            candidate_content = candidate.read_text(encoding="utf-8").rstrip()
+            if normalizer:
+                candidate_content = normalizer(candidate_content)
+            if current_content != candidate_content:
+                continue
+            if self._remaster:
+                current.unlink()
+                self._updated.append(f"deleted (redundant): {current}")
+            else:
+                pytest.fail(
+                    f"{current} is identical to {candidate},"
+                    f" remove the redundant override.",
+                    pytrace=False,
+                )
+            return
 
     def _fail_mismatch(
-        self, actual_str: str, expected_str: str | None, expected_path: Path
+        self,
+        actual_str: str,
+        expected_str: str | None,
+        compare_path: Path,
+        write_path: Path,
     ) -> None:
         if expected_str is None:
             pytest.fail(
-                f"Expected file {expected_path} does not exist. "
-                f"Run with --remaster to create it.",
+                f"Expected file {compare_path} does not exist. "
+                f"Run with --remaster to create {write_path}.",
                 pytrace=False,
             )
         diff_lines = list(
             difflib.unified_diff(
                 expected_str.splitlines(keepends=True),
                 actual_str.splitlines(keepends=True),
-                fromfile=str(expected_path),
+                fromfile=str(compare_path),
                 tofile="actual",
             )
         )
         diff_text = self._maybe_truncate(diff_lines)
-        pytest.fail(f"Mismatch at {expected_path}:\n{diff_text}", pytrace=False)
+        pytest.fail(
+            f"Mismatch at {compare_path}:\n{diff_text}\n"
+            f"Run with --remaster to update {write_path}.",
+            pytrace=False,
+        )
 
     _VERBOSE_NO_TRUNCATE = 2
 
