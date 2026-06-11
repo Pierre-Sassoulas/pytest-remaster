@@ -9,6 +9,7 @@ from pytest_remaster.golden_master import (
     resolve_with_override,
     whitespace_normalizer,
 )
+from pytest_remaster.matchers import Tolerance, ToleranceSpec, tolerance_matcher
 from pytest_remaster.patching import PatchRegistry
 
 __all__ = [
@@ -16,10 +17,13 @@ __all__ = [
     "GoldenMaster",
     "MalformedTestCase",
     "PatchRegistry",
+    "Tolerance",
+    "ToleranceSpec",
     "discover_test_cases",
     "discover_test_files",
     "json_normalizer",
     "mock_calls_serializer",
     "resolve_with_override",
+    "tolerance_matcher",
     "whitespace_normalizer",
 ]

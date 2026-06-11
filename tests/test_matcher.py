@@ -280,6 +280,88 @@ def test_matcher_bless_round_trip(pytester: pytest.Pytester) -> None:
     result.assert_outcomes(passed=1)
 
 
+def test_string_equality_fast_path_skips_matcher(pytester: pytest.Pytester) -> None:
+    """Identical serialized content matches without consulting the matcher.
+
+    This absorbs storage rounding for free: the golden holds %.6g of the
+    blessed value, an unchanged actual serializes to the same text, and
+    even an exact-equality matcher (which would fail on raw float vs
+    parsed golden) never runs.
+    """
+    pytester.makepyfile(
+        """
+        def boom(actual, expected):
+            raise RuntimeError("matcher must not run on identical content")
+
+        def test_fast_path(golden_master, tmp_path):
+            expected = tmp_path / "expected.txt"
+            expected.write_text("1234.57\\n")  # %.6g of blessed 1234.5678
+            golden_master.check(
+                1234.5678,
+                expected,
+                serializer=lambda v: f"{v:.6g}",
+                matcher=boom,
+            )
+        """
+    )
+    result = pytester.runpytest("--no-remaster")
+    result.assert_outcomes(passed=1)
+
+
+def test_roundtrip_matcher_sees_stored_precision(pytester: pytest.Pytester) -> None:
+    """roundtrip=True passes deserializer(serializer(actual)) to the matcher.
+
+    Both sides then carry the storage precision, so the tolerance table
+    needs no extra slack for serialization rounding.
+    """
+    pytester.makepyfile(
+        """
+        def check_quantized(actual, expected):
+            assert actual == 1.26, f"expected quantized 1.26, got {actual!r}"
+            assert expected == 1.25
+            return abs(actual - expected) < 0.02
+
+        def test_roundtrip(golden_master, tmp_path):
+            expected = tmp_path / "expected.txt"
+            expected.write_text("1.25\\n")
+            golden_master.check(
+                1.2599999,  # full precision; %.3g storage is 1.26
+                expected,
+                serializer=lambda v: f"{v:.3g}",
+                deserializer=float,
+                matcher=check_quantized,
+                roundtrip=True,
+            )
+        """
+    )
+    result = pytester.runpytest("--no-remaster")
+    result.assert_outcomes(passed=1)
+
+
+def test_roundtrip_requires_matcher_and_deserializer(pytester: pytest.Pytester) -> None:
+    """check() rejects roundtrip without matcher or without deserializer."""
+    pytester.makepyfile(
+        """
+        import pytest
+
+        def test_requires(golden_master, tmp_path):
+            with pytest.raises(ValueError, match="roundtrip requires"):
+                golden_master.check(
+                    1.0, tmp_path / "expected.txt", roundtrip=True
+                )
+            with pytest.raises(ValueError, match="roundtrip requires"):
+                golden_master.check(
+                    1.0,
+                    tmp_path / "expected.txt",
+                    matcher=lambda a, e: True,
+                    roundtrip=True,
+                )
+        """
+    )
+    result = pytester.runpytest("--no-remaster")
+    result.assert_outcomes(passed=1)
+
+
 def test_check_all_with_matcher(pytester: pytest.Pytester) -> None:
     """check_all() forwards matcher and deserializer to each check."""
     pytester.makepyfile(
