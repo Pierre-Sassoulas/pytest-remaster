@@ -145,6 +145,8 @@ class GoldenMaster:
         dimensions: dict[str, str] | None = None,
         serializer: Callable[[Any], str] = str,
         normalizer: Callable[[str], str] | None = None,
+        deserializer: Callable[[str], Any] | None = None,
+        matcher: Callable[[Any, Any], bool] | None = None,
     ) -> None:
         """Compare one actual value against one expected file.
 
@@ -160,17 +162,68 @@ class GoldenMaster:
             serializer: Converts actual value to string. Default: str().
             normalizer: Optional function applied to both actual and expected
                 strings before comparison. The normalized output is also
-                written when remastering.
+                written when remastering. Mutually exclusive with *matcher*.
+            deserializer: Optional function parsing the expected file text
+                back into a value for *matcher*. Requires *matcher*.
+            matcher: Optional comparison hook replacing string equality.
+                Called with the actual value (before serialization) and the
+                expected value (the file text, deserialized when
+                *deserializer* is given). Returns True on match. May raise
+                AssertionError instead of returning False; its message is
+                then shown in place of the string diff. Mutually exclusive
+                with *normalizer*.
 
         """
         expected_path = Path(expected_path)
+        self._validate_check_args(
+            override_path, dimensions, normalizer, deserializer, matcher
+        )
+
+        chain = self._resolve_chain(expected_path, override_path, dimensions)
+        actual_value, actual_str = self._resolve_actual(
+            actual, expected_path, serializer
+        )
+        self._check_resolved(
+            actual_value,
+            actual_str,
+            expected_path,
+            chain,
+            dimensions=dimensions,
+            normalizer=normalizer,
+            deserializer=deserializer,
+            matcher=matcher,
+        )
+
+    @staticmethod
+    def _validate_check_args(
+        override_path: str | Path | None,
+        dimensions: dict[str, str] | None,
+        normalizer: Callable[[str], str] | None,
+        deserializer: Callable[[str], Any] | None,
+        matcher: Callable[[Any, Any], bool] | None,
+    ) -> None:
         if override_path is not None and dimensions is not None:
             msg = "override_path and dimensions are mutually exclusive"
             raise ValueError(msg)
+        if matcher is not None and normalizer is not None:
+            msg = "matcher and normalizer are mutually exclusive"
+            raise ValueError(msg)
+        if deserializer is not None and matcher is None:
+            msg = "deserializer requires matcher"
+            raise ValueError(msg)
 
-        chain = self._resolve_chain(expected_path, override_path, dimensions)
-        actual_str = self._resolve_actual(actual, expected_path, serializer)
-
+    def _check_resolved(
+        self,
+        actual_value: Any,
+        actual_str: str,
+        expected_path: Path,
+        chain: list[Path],
+        *,
+        dimensions: dict[str, str] | None,
+        normalizer: Callable[[str], str] | None,
+        deserializer: Callable[[str], Any] | None,
+        matcher: Callable[[Any, Any], bool] | None,
+    ) -> None:
         # Resolution: first existing file in chain, else base
         compare_path, fallback_paths = self._resolve_compare(expected_path, chain)
 
@@ -183,7 +236,14 @@ class GoldenMaster:
         if not actual_str and expected_str is None:
             return
 
-        if self._content_matches(actual_str, expected_str, normalizer):
+        if matcher is not None:
+            matched, detail = self._matcher_matches(
+                actual_value, expected_str, matcher, deserializer
+            )
+        else:
+            matched = self._content_matches(actual_str, expected_str, normalizer)
+            detail = None
+        if matched:
             self._dedup_chain(compare_path, fallback_paths, expected_path, normalizer)
             return
 
@@ -193,11 +253,16 @@ class GoldenMaster:
         if chain and not (dimensions is not None and expected_str is None):
             write_path = chain[0]
         if self._remaster:
-            write_str = normalizer(actual_str) if normalizer else actual_str
-            self._remaster_file(write_str, expected_str, write_path)
+            self._remaster_file(
+                normalizer(actual_str) if normalizer else actual_str,
+                expected_str,
+                write_path,
+            )
             self._dedup_chain(write_path, fallback_paths, expected_path, normalizer)
         else:
-            self._fail_mismatch(actual_str, expected_str, expected_path, write_path)
+            self._fail_mismatch(
+                actual_str, expected_str, expected_path, write_path, detail=detail
+            )
 
     @staticmethod
     def _resolve_chain(
@@ -226,7 +291,7 @@ class GoldenMaster:
         actual: Any | Callable[[], Any],
         expected_path: Path,
         serializer: Callable[[Any], str],
-    ) -> str:
+    ) -> tuple[Any, str]:
         if callable(actual) and not isinstance(actual, str):
             try:
                 actual = actual()
@@ -236,7 +301,23 @@ class GoldenMaster:
                     f"  (directory was discovered as a test case"
                     f" but appears malformed)"
                 ) from exc
-        return serializer(actual).rstrip()
+        return actual, serializer(actual).rstrip()
+
+    @staticmethod
+    def _matcher_matches(
+        actual_value: Any,
+        expected_str: str | None,
+        matcher: Callable[[Any, Any], bool],
+        deserializer: Callable[[str], Any] | None,
+    ) -> tuple[bool, str | None]:
+        """Return (matched, failure_detail) from the matcher hook."""
+        if expected_str is None:
+            return False, None
+        expected_value = deserializer(expected_str) if deserializer else expected_str
+        try:
+            return bool(matcher(actual_value, expected_value)), None
+        except AssertionError as exc:
+            return False, str(exc)
 
     @staticmethod
     def _content_matches(
@@ -258,6 +339,8 @@ class GoldenMaster:
         extractors: dict[str, Callable[[Any], Any]],
         serializer: Callable[[Any], str] = str,
         normalizer: Callable[[str], str] | None = None,
+        deserializer: Callable[[str], Any] | None = None,
+        matcher: Callable[[Any, Any], bool] | None = None,
     ) -> None:
         """Run a function on a case and check named outputs.
 
@@ -269,6 +352,8 @@ class GoldenMaster:
                 the value to compare.
             serializer: Converts each value to string. Default: str().
             normalizer: Optional function applied before comparison.
+            deserializer: Optional parser for expected file text. See check().
+            matcher: Optional comparison hook. See check().
 
         """
         try:
@@ -284,6 +369,8 @@ class GoldenMaster:
                 case.expected(suffix=suffix),
                 serializer=serializer,
                 normalizer=normalizer,
+                deserializer=deserializer,
+                matcher=matcher,
             )
 
     def _remaster_file(
@@ -341,11 +428,19 @@ class GoldenMaster:
         expected_str: str | None,
         compare_path: Path,
         write_path: Path,
+        *,
+        detail: str | None = None,
     ) -> None:
         if expected_str is None:
             pytest.fail(
                 f"Expected file {compare_path} does not exist. "
                 f"Run with --remaster to create {write_path}.",
+                pytrace=False,
+            )
+        if detail is not None:
+            pytest.fail(
+                f"Mismatch at {compare_path}:\n{detail}\n"
+                f"Run with --remaster to update {write_path}.",
                 pytrace=False,
             )
         diff_lines = list(
@@ -393,6 +488,8 @@ class GoldenMaster:
         *,
         serializer: Callable[[Any], str] = str,
         normalizer: Callable[[str], str] | None = None,
+        deserializer: Callable[[str], Any] | None = None,
+        matcher: Callable[[Any, Any], bool] | None = None,
         suffix: str = "",
     ) -> None:
         """Compare multiple actuals against expected_0, expected_1, ... files.
@@ -402,6 +499,8 @@ class GoldenMaster:
             directory: Directory containing expected_N files.
             serializer: Converts each value to string. Default: str().
             normalizer: Optional function applied before comparison.
+            deserializer: Optional parser for expected file text. See check().
+            matcher: Optional comparison hook. See check().
             suffix: File extension (e.g. ``".json"``, ``".txt"``).
 
         """
@@ -428,6 +527,8 @@ class GoldenMaster:
                 directory / f"expected_{i}{suffix}",
                 serializer=serializer,
                 normalizer=normalizer,
+                deserializer=deserializer,
+                matcher=matcher,
             )
 
         if self._remaster and len(actuals) < len(existing):

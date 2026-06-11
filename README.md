@@ -124,6 +124,56 @@ def test_cli(
 All examples auto-update expected files on mismatch. Review the diff in git, rerun. Pass
 `--no-remaster` for strict comparison.
 
+## Numeric tolerance with `matcher` and `deserializer`
+
+When outputs contain floats, exact string comparison churns the golden files on every
+solver/float noise. Replace string equality with a comparison on deserialized values:
+
+- `serializer` still controls what is written to the golden file (e.g. fixed `%.6g`
+  precision, human-reviewable);
+- `deserializer` parses the golden file text back into a value;
+- `matcher(actual_value, expected_value)` decides equality — e.g. `np.isclose` with a
+  per-quantity tolerance. Within tolerance, the golden file is never rewritten, even in
+  remaster mode. Beyond tolerance, `--remaster` re-blesses the golden as usual.
+
+A matcher may raise `AssertionError` instead of returning `False`; its message replaces
+the string diff in the failure output (e.g. to report exactly which column/row moved and
+by how much).
+
+```python
+import math
+
+TOLERANCES = {"hz": 1e-3, "w_bess_kw": 0.5}
+
+
+def within_tolerance(actual: dict[str, float], expected: dict[str, float]) -> bool:
+    if actual.keys() != expected.keys():
+        return False
+    failures = [
+        f"{key}: golden={expected[key]:.6g} actual={actual[key]:.6g} tol={tol:g}"
+        for key, tol in ((k, TOLERANCES.get(k, 1e-6)) for k in expected)
+        if not math.isclose(actual[key], expected[key], abs_tol=tol, rel_tol=1e-4)
+    ]
+    if failures:
+        raise AssertionError("\n".join(failures))
+    return True
+
+
+def test_metrics(golden_master: GoldenMaster) -> None:
+    metrics = run_simulation()
+    golden_master.check(
+        metrics,
+        Path(__file__).parent / "goldens" / "nominal.metrics.json",
+        serializer=lambda m: json.dumps(m, indent=2, sort_keys=True),
+        deserializer=json.loads,
+        matcher=within_tolerance,
+    )
+```
+
+`matcher` is mutually exclusive with `normalizer` (they are alternative comparison
+strategies), and `deserializer` requires `matcher`. Both are also accepted by
+`check_all()` and `check_each()`.
+
 ## Version-specific expected files with `dimensions`
 
 When expected output varies by Python version, platform, or implementation, use
