@@ -218,6 +218,43 @@ compare it, name the index (`df.index.name = "t_s"`) and pass
 column and gets its own tolerance key. An unnamed index under `index_col=None` appears
 as an `Unnamed: 0` column with the default tolerance — name it instead.
 
+### Heterogeneous outputs with `Output`
+
+When one run produces outputs needing different serialization — a CSV time series next
+to JSON metrics — give `check_each` a per-suffix `Output` spec instead of a bare
+extractor:
+
+```python
+from pytest_remaster import Output
+
+golden_master.check_each(
+    case,
+    runner=run_scenario,
+    extractors={
+        ".csv": Output(
+            lambda r: r.df,
+            serializer=dataframe_serializer(),
+            deserializer=dataframe_deserializer(),
+            matcher=tolerance_matcher(TOLERANCES),
+            roundtrip=True,
+            name=lambda case: f"{case.input.name}.csv",  # default: expected.csv
+        ),
+        ".metrics.json": Output(
+            lambda r: r.metrics,
+            serializer=lambda m: json.dumps(m, indent=2, sort_keys=True),
+            deserializer=json.loads,
+            matcher=tolerance_matcher(TOLERANCES),
+            roundtrip=True,
+        ),
+        ".stdout": lambda r: r.out,  # bare callables still work
+    },
+)
+```
+
+`serializer` and `name` fall back individually to the shared keyword arguments. The
+comparison fields (`normalizer`, `deserializer`, `matcher`, `roundtrip`) inherit as a
+unit: an `Output` that sets any of them replaces the shared comparison entirely.
+
 ## Collecting failures across multiple checks
 
 Without `--remaster`, the first mismatching `check()` fails the test immediately and
