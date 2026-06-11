@@ -155,7 +155,7 @@ def test_metrics(golden_master: GoldenMaster) -> None:
     golden_master.check(
         metrics,
         Path(__file__).parent / "goldens" / "nominal.metrics.json",
-        serializer=lambda m: json.dumps(m, indent=2, sort_keys=True),
+        serializer=json_serializer(),  # indent=2, sort_keys=True
         deserializer=json.loads,
         matcher=MATCHER,
         roundtrip=True,
@@ -225,7 +225,7 @@ to JSON metrics — give `check_each` a per-suffix `Output` spec instead of a ba
 extractor:
 
 ```python
-from pytest_remaster import Output
+from pytest_remaster import Output, json_serializer
 
 golden_master.check_each(
     case,
@@ -241,7 +241,7 @@ golden_master.check_each(
         ),
         ".metrics.json": Output(
             lambda r: r.metrics,
-            serializer=lambda m: json.dumps(m, indent=2, sort_keys=True),
+            serializer=json_serializer(),
             deserializer=json.loads,
             matcher=tolerance_matcher(TOLERANCES),
             roundtrip=True,

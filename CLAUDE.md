@@ -58,6 +58,7 @@ regeneration.
 - `discover_test_cases(base_dir)` — leaf directories → `CaseData`
 - `discover_test_files(base_dir, pattern)` — files by glob → `CaseData`
 - `json_normalizer`, `whitespace_normalizer` — opt-in normalizers for `check()`
+- `json_serializer(indent=, sort_keys=, ensure_ascii=)` — JSON serializer factory
 - `mock_calls_serializer(name)` — serializer for `mock.call_args_list`
 
 ## Development

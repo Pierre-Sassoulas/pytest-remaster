@@ -39,6 +39,37 @@ json_normalizer = _json_normalizer
 consistent formatting. Opt-in via ``normalizer=json_normalizer``."""
 
 
+def json_serializer(
+    *, indent: int = 2, sort_keys: bool = True, ensure_ascii: bool = False
+) -> Callable[[Any], str]:
+    """Return a serializer writing a value as human-reviewable JSON.
+
+    The counterpart of ``deserializer=json.loads`` for numeric goldens::
+
+        golden_master.check(
+            metrics,
+            golden_dir / "nominal.metrics.json",
+            serializer=json_serializer(),
+            deserializer=json.loads,
+            matcher=tolerance_matcher(TOLERANCES),
+            roundtrip=True,
+        )
+
+    Args:
+        indent: Indentation level. Default: 2.
+        sort_keys: Sort object keys for a stable diff. Default: True.
+        ensure_ascii: Escape non-ASCII characters. Default: False.
+
+    """
+
+    def _serialize(value: Any) -> str:
+        return json.dumps(
+            value, indent=indent, sort_keys=sort_keys, ensure_ascii=ensure_ascii
+        )
+
+    return _serialize
+
+
 def mock_calls_serializer(name: str) -> Callable[[Any], str]:
     """Return a serializer that formats a mock's ``call_args_list``.
 
