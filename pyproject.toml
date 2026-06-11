@@ -8,13 +8,12 @@ description = "Pytest plugin for golden master (characterisation) testing with a
 readme = "README.md"
 license = "MIT"
 authors = [ { name = "Pierre Sassoulas" } ]
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Framework :: Pytest",
   "Intended Audience :: Developers",
   "Programming Language :: Python :: 3 :: Only",
-  "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
