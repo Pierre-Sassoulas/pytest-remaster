@@ -35,7 +35,7 @@ repos:
       - id: mypy
         args: ["--strict"]
         exclude: "tests/demo_pylint/platform_checker\\.py"
-        additional_dependencies: [pytest>=7.0]
+        additional_dependencies: [pytest>=7.0, pandas-stubs]
   - repo: https://github.com/rbubley/mirrors-prettier
     rev: v3.8.1
     hooks:

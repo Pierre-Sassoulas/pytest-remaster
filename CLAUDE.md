@@ -12,6 +12,9 @@ regeneration.
 - `src/pytest_remaster/golden_master.py` — `GoldenMaster`, `MalformedTestCase`,
   normalizers
 - `src/pytest_remaster/matchers.py` — `tolerance_matcher`
+- `src/pytest_remaster/pandas_io.py` — `dataframe_serializer`, `dataframe_deserializer`
+  (requires the `pandas` extra; lazily exported via `__getattr__` in `__init__.py` so
+  the core package stays stdlib-pure)
 - `src/pytest_remaster/patching.py` — `PatchRegistry`
 - `tests/test_plugin.py` — Tests for plugin options and fixtures (via pytester)
 - `tests/test_golden_master.py` — Tests for GoldenMaster (via pytester)
@@ -19,6 +22,7 @@ regeneration.
 - `tests/test_patching.py` — Tests for PatchRegistry (via pytester)
 - `tests/test_matcher.py` — Tests for matcher/deserializer hooks (via pytester)
 - `tests/test_collecting.py` — Tests for collecting() failure aggregation (via pytester)
+- `tests/test_pandas_io.py` — Tests for pandas helpers (importorskip pandas)
 - `tests/test_tolerance_matcher.py` — Tests for tolerance_matcher (direct calls; it is a
   pure function, pytester only for the fixture integration test)
 - `tests/demo/` — Demo chatbot app exercising the framework end-to-end
@@ -39,6 +43,8 @@ regeneration.
   by default
   - `collecting()` — context manager deferring strict-mode failures; reports all
     mismatches in one failure at exit
+- `dataframe_serializer(float_format=)` / `dataframe_deserializer(index_col=)` — CSV at
+  fixed precision out, column → series mapping back in (`pandas` extra)
 - `CaseData` — returned by discovery, `.input` path + `.expected(index, suffix)` helper
   - `expected(index=, suffix=)` — directory mode: `expected_{index}{suffix}`
   - `expected(suffix=)` — directory mode: `expected{suffix}`, file mode: replaces
