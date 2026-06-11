@@ -140,23 +140,14 @@ A matcher may raise `AssertionError` instead of returning `False`; its message r
 the string diff in the failure output (e.g. to report exactly which column/row moved and
 by how much).
 
+The built-in `tolerance_matcher` covers the common case — per-key absolute tolerances
+with `fnmatch` patterns, recursing through mappings and sequences (e.g. column →
+series), reporting every value beyond tolerance:
+
 ```python
-import math
+from pytest_remaster import GoldenMaster, tolerance_matcher
 
-TOLERANCES = {"hz": 1e-3, "w_bess_kw": 0.5}
-
-
-def within_tolerance(actual: dict[str, float], expected: dict[str, float]) -> bool:
-    if actual.keys() != expected.keys():
-        return False
-    failures = [
-        f"{key}: golden={expected[key]:.6g} actual={actual[key]:.6g} tol={tol:g}"
-        for key, tol in ((k, TOLERANCES.get(k, 1e-6)) for k in expected)
-        if not math.isclose(actual[key], expected[key], abs_tol=tol, rel_tol=1e-4)
-    ]
-    if failures:
-        raise AssertionError("\n".join(failures))
-    return True
+MATCHER = tolerance_matcher({"hz": 1e-3, "*_kw": 0.5, "*_kvar": 1.0, "soc_pct": 0.1})
 
 
 def test_metrics(golden_master: GoldenMaster) -> None:
@@ -166,13 +157,36 @@ def test_metrics(golden_master: GoldenMaster) -> None:
         Path(__file__).parent / "goldens" / "nominal.metrics.json",
         serializer=lambda m: json.dumps(m, indent=2, sort_keys=True),
         deserializer=json.loads,
-        matcher=within_tolerance,
+        matcher=MATCHER,
+        roundtrip=True,
     )
 ```
 
+Keys resolve exact-match first, then `fnmatch` patterns in declaration order, then
+`default` (0.0 — exact). A table value is an absolute tolerance, or a
+`Tolerance(atol=..., rtol=...)` when a wide-range quantity needs a relative tolerance
+alongside purely absolute keys (e.g.
+`{"soc_pct": 0.1, "*_kw": Tolerance(atol=0.5, rtol=1e-3)}`). `Tolerance` is a
+`NamedTuple`, so a bare `(atol, rtol)` pair is accepted too; `rel=` sets the relative
+tolerance for bare-float entries (a `Tolerance`/pair opts out of it — its `rtol` is
+exactly what it says). Non-numeric values compare with equality. Failures read
+`key[row]: golden=… actual=… |Δ|=… tol=…`, capped per sequence by `report_limit=5` and
+overall by `total_limit=` (unlimited by default). NaN compares equal to NaN by default
+(a reproduced gap in a time series is a match) and never equal to a number; pass
+`nan_equal=False` for raw `math.isclose` behavior.
+
+Two mechanisms keep storage precision out of the tolerance table (no `rtol` fudge factor
+needed to absorb the write→parse rounding of the golden file):
+
+- If the serialized actual equals the golden file text, the values match without
+  consulting the matcher — an unchanged run can never trip a tight tolerance.
+- `roundtrip=True` passes `deserializer(serializer(actual))` to the matcher instead of
+  the raw value, so both sides carry the storage precision and a reported failure can be
+  reproduced from the committed golden plus the printed actual alone.
+
 `matcher` is mutually exclusive with `normalizer` (they are alternative comparison
-strategies), and `deserializer` requires `matcher`. Both are also accepted by
-`check_all()` and `check_each()`.
+strategies), `deserializer` requires `matcher`, and `roundtrip` requires both. All are
+also accepted by `check_all()` and `check_each()`.
 
 ## Collecting failures across multiple checks
 

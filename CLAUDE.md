@@ -11,6 +11,7 @@ regeneration.
   `discover_test_files`
 - `src/pytest_remaster/golden_master.py` — `GoldenMaster`, `MalformedTestCase`,
   normalizers
+- `src/pytest_remaster/matchers.py` — `tolerance_matcher`
 - `src/pytest_remaster/patching.py` — `PatchRegistry`
 - `tests/test_plugin.py` — Tests for plugin options and fixtures (via pytester)
 - `tests/test_golden_master.py` — Tests for GoldenMaster (via pytester)
@@ -18,6 +19,8 @@ regeneration.
 - `tests/test_patching.py` — Tests for PatchRegistry (via pytester)
 - `tests/test_matcher.py` — Tests for matcher/deserializer hooks (via pytester)
 - `tests/test_collecting.py` — Tests for collecting() failure aggregation (via pytester)
+- `tests/test_tolerance_matcher.py` — Tests for tolerance_matcher (direct calls; it is a
+  pure function, pytester only for the fixture integration test)
 - `tests/demo/` — Demo chatbot app exercising the framework end-to-end
 - `tests/demo_subprocess/` — Demo CLI app with capsys/caplog capture
 
@@ -27,6 +30,13 @@ regeneration.
   `check_each()` for named outputs (runner + extractors)
   - `matcher=` + `deserializer=` — pluggable comparison on deserialized values (e.g.
     numeric tolerance); matcher may raise AssertionError for rich failure detail
+  - `roundtrip=` — matcher receives `deserializer(serializer(actual))` so both sides
+    carry storage precision; identical serialized content matches without the matcher
+- `tolerance_matcher(tolerances, rel=, default=, report_limit=, nan_equal=, total_limit=)`
+  — built-in matcher: per-key tolerances (exact key, then fnmatch patterns, then
+  default), table values are atol floats or `(atol, rtol)` pairs, recurses
+  mappings/sequences, raises AssertionError listing values beyond tolerance; NaN == NaN
+  by default
   - `collecting()` — context manager deferring strict-mode failures; reports all
     mismatches in one failure at exit
 - `CaseData` — returned by discovery, `.input` path + `.expected(index, suffix)` helper

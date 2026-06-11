@@ -195,6 +195,7 @@ class GoldenMaster:
         normalizer: Callable[[str], str] | None = None,
         deserializer: Callable[[str], Any] | None = None,
         matcher: Callable[[Any, Any], bool] | None = None,
+        roundtrip: bool = False,
     ) -> None:
         """Compare one actual value against one expected file.
 
@@ -219,18 +220,30 @@ class GoldenMaster:
                 *deserializer* is given). Returns True on match. May raise
                 AssertionError instead of returning False; its message is
                 then shown in place of the string diff. Mutually exclusive
-                with *normalizer*.
+                with *normalizer*. If the serialized actual equals the file
+                text, the values match without consulting the matcher.
+            roundtrip: Pass ``deserializer(serializer(actual))`` to the
+                matcher instead of the raw actual value, so both sides carry
+                the storage precision and serialization rounding can never
+                trip a tight tolerance. Requires *matcher* and *deserializer*.
 
         """
         expected_path = Path(expected_path)
         self._validate_check_args(
-            override_path, dimensions, normalizer, deserializer, matcher
+            override_path=override_path,
+            dimensions=dimensions,
+            normalizer=normalizer,
+            deserializer=deserializer,
+            matcher=matcher,
+            roundtrip=roundtrip,
         )
 
         chain = self._resolve_chain(expected_path, override_path, dimensions)
         actual_value, actual_str = self._resolve_actual(
             actual, expected_path, serializer
         )
+        if roundtrip:
+            actual_value = deserializer(actual_str)  # type: ignore[misc]
         self._check_resolved(
             actual_value,
             actual_str,
@@ -244,11 +257,13 @@ class GoldenMaster:
 
     @staticmethod
     def _validate_check_args(
+        *,
         override_path: str | Path | None,
         dimensions: dict[str, str] | None,
         normalizer: Callable[[str], str] | None,
         deserializer: Callable[[str], Any] | None,
         matcher: Callable[[Any, Any], bool] | None,
+        roundtrip: bool,
     ) -> None:
         if override_path is not None and dimensions is not None:
             msg = "override_path and dimensions are mutually exclusive"
@@ -258,6 +273,9 @@ class GoldenMaster:
             raise ValueError(msg)
         if deserializer is not None and matcher is None:
             msg = "deserializer requires matcher"
+            raise ValueError(msg)
+        if roundtrip and (matcher is None or deserializer is None):
+            msg = "roundtrip requires matcher and deserializer"
             raise ValueError(msg)
 
     def _check_resolved(
@@ -286,7 +304,7 @@ class GoldenMaster:
 
         if matcher is not None:
             matched, detail = self._matcher_matches(
-                actual_value, expected_str, matcher, deserializer
+                actual_value, actual_str, expected_str, matcher, deserializer
             )
         else:
             matched = self._content_matches(actual_str, expected_str, normalizer)
@@ -354,6 +372,7 @@ class GoldenMaster:
     @staticmethod
     def _matcher_matches(
         actual_value: Any,
+        actual_str: str,
         expected_str: str | None,
         matcher: Callable[[Any, Any], bool],
         deserializer: Callable[[str], Any] | None,
@@ -361,6 +380,10 @@ class GoldenMaster:
         """Return (matched, failure_detail) from the matcher hook."""
         if expected_str is None:
             return False, None
+        # Identical serialized content matches by definition (the serializer
+        # is deterministic); the matcher only ever sees genuine drift.
+        if actual_str == expected_str:
+            return True, None
         expected_value = deserializer(expected_str) if deserializer else expected_str
         try:
             return bool(matcher(actual_value, expected_value)), None
@@ -389,6 +412,7 @@ class GoldenMaster:
         normalizer: Callable[[str], str] | None = None,
         deserializer: Callable[[str], Any] | None = None,
         matcher: Callable[[Any, Any], bool] | None = None,
+        roundtrip: bool = False,
     ) -> None:
         """Run a function on a case and check named outputs.
 
@@ -402,6 +426,7 @@ class GoldenMaster:
             normalizer: Optional function applied before comparison.
             deserializer: Optional parser for expected file text. See check().
             matcher: Optional comparison hook. See check().
+            roundtrip: Round-trip actual through storage. See check().
 
         """
         try:
@@ -419,6 +444,7 @@ class GoldenMaster:
                 normalizer=normalizer,
                 deserializer=deserializer,
                 matcher=matcher,
+                roundtrip=roundtrip,
             )
 
     def _remaster_file(
@@ -536,6 +562,7 @@ class GoldenMaster:
         normalizer: Callable[[str], str] | None = None,
         deserializer: Callable[[str], Any] | None = None,
         matcher: Callable[[Any, Any], bool] | None = None,
+        roundtrip: bool = False,
         suffix: str = "",
     ) -> None:
         """Compare multiple actuals against expected_0, expected_1, ... files.
@@ -547,6 +574,7 @@ class GoldenMaster:
             normalizer: Optional function applied before comparison.
             deserializer: Optional parser for expected file text. See check().
             matcher: Optional comparison hook. See check().
+            roundtrip: Round-trip actual through storage. See check().
             suffix: File extension (e.g. ``".json"``, ``".txt"``).
 
         """
@@ -575,16 +603,22 @@ class GoldenMaster:
                 normalizer=normalizer,
                 deserializer=deserializer,
                 matcher=matcher,
+                roundtrip=roundtrip,
             )
 
-        if self._remaster and len(actuals) < len(existing):
-            for extra in existing[len(actuals) :]:
+        self._trim_extra_expected(len(actuals), existing)
+
+    def _trim_extra_expected(self, count: int, existing: list[Path]) -> None:
+        """Delete (remaster) or report expected files beyond *count*."""
+        if count >= len(existing):
+            return
+        if self._remaster:
+            for extra in existing[count:]:
                 extra.unlink()
                 self._updated.append(f"deleted: {extra}")
-
-        if not self._remaster and len(actuals) < len(existing):
-            extra_files = [p.name for p in existing[len(actuals) :]]
+        else:
+            extra_files = [p.name for p in existing[count:]]
             self._fail(
-                f"Expected {len(existing)} results but got {len(actuals)}. "
+                f"Expected {len(existing)} results but got {count}. "
                 f"Extra files: {extra_files}. Run with --remaster to clean up."
             )
