@@ -174,6 +174,25 @@ def test_metrics(golden_master: GoldenMaster) -> None:
 strategies), and `deserializer` requires `matcher`. Both are also accepted by
 `check_all()` and `check_each()`.
 
+## Collecting failures across multiple checks
+
+Without `--remaster`, the first mismatching `check()` fails the test immediately and
+hides the remaining comparisons. When one expensive run produces many files to check,
+wrap the checks in `collecting()` to run them all and get a single failure listing every
+mismatch:
+
+```python
+def test_scenarios(golden_master: GoldenMaster) -> None:
+    results = run_expensive_simulation()
+    with golden_master.collecting():
+        for name, (df, metrics) in results.items():
+            golden_master.check(df, GOLDEN_DIR / f"{name}.csv", ...)
+            golden_master.check(metrics, GOLDEN_DIR / f"{name}.metrics.json", ...)
+```
+
+Remaster mode is unaffected: it already aggregates, updating every file and reporting
+them all at fixture teardown.
+
 ## Version-specific expected files with `dimensions`
 
 When expected output varies by Python version, platform, or implementation, use

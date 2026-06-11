@@ -17,6 +17,7 @@ regeneration.
 - `tests/test_discovery.py` — Tests for discovery (via pytester)
 - `tests/test_patching.py` — Tests for PatchRegistry (via pytester)
 - `tests/test_matcher.py` — Tests for matcher/deserializer hooks (via pytester)
+- `tests/test_collecting.py` — Tests for collecting() failure aggregation (via pytester)
 - `tests/demo/` — Demo chatbot app exercising the framework end-to-end
 - `tests/demo_subprocess/` — Demo CLI app with capsys/caplog capture
 
@@ -26,6 +27,8 @@ regeneration.
   `check_each()` for named outputs (runner + extractors)
   - `matcher=` + `deserializer=` — pluggable comparison on deserialized values (e.g.
     numeric tolerance); matcher may raise AssertionError for rich failure detail
+  - `collecting()` — context manager deferring strict-mode failures; reports all
+    mismatches in one failure at exit
 - `CaseData` — returned by discovery, `.input` path + `.expected(index, suffix)` helper
   - `expected(index=, suffix=)` — directory mode: `expected_{index}{suffix}`
   - `expected(suffix=)` — directory mode: `expected{suffix}`, file mode: replaces

@@ -6,7 +6,8 @@ import difflib
 import itertools
 import json
 import re
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
+from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -122,6 +123,53 @@ class GoldenMaster:
         self._remaster = remaster
         self._config = config
         self._updated: list[str] = []
+        self._collecting_depth = 0
+        self._mismatches: list[str] = []
+
+    @contextmanager
+    def collecting(self) -> Iterator[None]:
+        """Defer mismatch failures and report them all at exit.
+
+        Inside the context, a failing ``check()`` records its failure
+        instead of failing the test immediately, so every comparison runs.
+        On exit, a single failure lists all recorded mismatches. Useful
+        when one expensive run produces many files to check::
+
+            with golden_master.collecting():
+                for name, result in results.items():
+                    golden_master.check(result, GOLDEN_DIR / f"{name}.csv")
+
+        Remaster mode is unaffected: updates are aggregated at fixture
+        teardown by :meth:`assert_remastered` as usual.
+
+        Blocks nest: helpers may wrap their checks in ``collecting()``
+        while the caller holds its own block; everything is reported once,
+        at the outermost exit.
+        """
+        self._collecting_depth += 1
+        try:
+            yield
+        finally:
+            self._collecting_depth -= 1
+            if self._collecting_depth == 0:
+                mismatches = self._mismatches[:]
+                self._mismatches.clear()
+            else:
+                mismatches = []
+        if mismatches:
+            count = len(mismatches)
+            pytest.fail(
+                f"{count} golden master mismatch{'es' if count > 1 else ''}:\n\n"
+                + "\n\n".join(mismatches),
+                pytrace=False,
+            )
+
+    def _fail(self, message: str) -> None:
+        """Fail immediately, or record the failure inside collecting()."""
+        if self._collecting_depth:
+            self._mismatches.append(message)
+        else:
+            pytest.fail(message, pytrace=False)
 
     def assert_remastered(self) -> None:
         """Fail if any golden masters were updated during this test.
@@ -415,10 +463,9 @@ class GoldenMaster:
                 current.unlink()
                 self._updated.append(f"deleted (redundant): {current}")
             else:
-                pytest.fail(
+                self._fail(
                     f"{current} is identical to {candidate},"
-                    f" remove the redundant override.",
-                    pytrace=False,
+                    f" remove the redundant override."
                 )
             return
 
@@ -432,17 +479,17 @@ class GoldenMaster:
         detail: str | None = None,
     ) -> None:
         if expected_str is None:
-            pytest.fail(
+            self._fail(
                 f"Expected file {compare_path} does not exist. "
-                f"Run with --remaster to create {write_path}.",
-                pytrace=False,
+                f"Run with --remaster to create {write_path}."
             )
+            return
         if detail is not None:
-            pytest.fail(
+            self._fail(
                 f"Mismatch at {compare_path}:\n{detail}\n"
-                f"Run with --remaster to update {write_path}.",
-                pytrace=False,
+                f"Run with --remaster to update {write_path}."
             )
+            return
         diff_lines = list(
             difflib.unified_diff(
                 expected_str.splitlines(keepends=True),
@@ -452,10 +499,9 @@ class GoldenMaster:
             )
         )
         diff_text = self._maybe_truncate(diff_lines)
-        pytest.fail(
+        self._fail(
             f"Mismatch at {compare_path}:\n{diff_text}\n"
-            f"Run with --remaster to update {write_path}.",
-            pytrace=False,
+            f"Run with --remaster to update {write_path}."
         )
 
     _VERBOSE_NO_TRUNCATE = 2
@@ -538,8 +584,7 @@ class GoldenMaster:
 
         if not self._remaster and len(actuals) < len(existing):
             extra_files = [p.name for p in existing[len(actuals) :]]
-            pytest.fail(
+            self._fail(
                 f"Expected {len(existing)} results but got {len(actuals)}. "
-                f"Extra files: {extra_files}. Run with --remaster to clean up.",
-                pytrace=False,
+                f"Extra files: {extra_files}. Run with --remaster to clean up."
             )
