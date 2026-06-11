@@ -188,6 +188,36 @@ needed to absorb the write→parse rounding of the golden file):
 strategies), `deserializer` requires `matcher`, and `roundtrip` requires both. All are
 also accepted by `check_all()` and `check_each()`.
 
+### DataFrame goldens with the `pandas` extra
+
+`pip install pytest-remaster[pandas]` adds the serializer/deserializer pair every
+numeric consumer otherwise rewrites — CSV at fixed precision out, column → series
+mapping back in (the shape `tolerance_matcher` recurses natively):
+
+```python
+from pytest_remaster import dataframe_deserializer, dataframe_serializer
+
+golden_master.check(
+    df,  # pandas DataFrame
+    golden_dir / "nominal.csv",
+    serializer=dataframe_serializer(),  # to_csv, float_format="%.6g"
+    deserializer=dataframe_deserializer(),  # read_csv → to_dict("list")
+    matcher=tolerance_matcher({"hz": 1e-3, "*_kw": 0.5}),
+    roundtrip=True,
+)
+```
+
+`dataframe_serializer(float_format=...)` and `dataframe_deserializer(index_col=...)`
+parametrize precision and index handling. The core package stays stdlib-pure: the
+helpers import pandas only when first used.
+
+**Index footgun:** with the default `index_col=0` the index is _excluded_ from
+comparison — a time axis that shifts while values stay identical passes silently. To
+compare it, name the index (`df.index.name = "t_s"`) and pass
+`dataframe_deserializer(index_col=None)`: the index then round-trips as a regular `t_s`
+column and gets its own tolerance key. An unnamed index under `index_col=None` appears
+as an `Unnamed: 0` column with the default tolerance — name it instead.
+
 ## Collecting failures across multiple checks
 
 Without `--remaster`, the first mismatching `check()` fails the test immediately and

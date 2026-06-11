@@ -23,7 +23,8 @@ classifiers = [
 ]
 dynamic = [ "version" ]
 dependencies = [ "pytest>=7" ]
-optional-dependencies.dev = [ "pre-commit", "pylint>4", "pytest-cov" ]
+optional-dependencies.dev = [ "pandas", "pre-commit", "pylint>4", "pytest-cov" ]
+optional-dependencies.pandas = [ "pandas" ]
 urls.Homepage = "https://github.com/Pierre-Sassoulas/pytest-remaster"
 entry-points.pytest11.remaster = "pytest_remaster.plugin"
 
@@ -77,6 +78,9 @@ messages_control.disable = [
   "duplicate-code",
   "too-many-arguments",
 ]
+
+[tool.mypy]
+mypy_path = "src"
 
 [tool.pytest]
 ini_options.testpaths = [ "tests" ]
