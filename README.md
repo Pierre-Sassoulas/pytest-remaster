@@ -255,6 +255,43 @@ golden_master.check_each(
 comparison fields (`normalizer`, `deserializer`, `matcher`, `roundtrip`) inherit as a
 unit: an `Output` that sets any of them replaces the shared comparison entirely.
 
+### Ready-made scenario tests with `golden_case_test`
+
+For the full convention — one directory per scenario, one expensive computation shared
+by all of them — `golden_case_test` builds the parametrized test:
+
+```python
+from pytest_remaster import golden_case_test
+
+test_scenarios = golden_case_test(
+    Path(__file__).parent / "scenarios",
+    run_validation_notebook,  # () -> {scenario_name: result}, runs once per process
+    extractors={
+        ".csv": Output(
+            lambda r: r.df,
+            serializer=dataframe_serializer(),
+            deserializer=dataframe_deserializer(),
+            matcher=tolerance_matcher(TOLERANCES),
+            roundtrip=True,
+            name=lambda case: f"{case.input.name}.csv",
+        ),
+        ".metrics.json": Output(
+            lambda r: r.metrics,
+            serializer=json_serializer(),
+            deserializer=json.loads,
+            matcher=tolerance_matcher(TOLERANCES),
+            roundtrip=True,
+        ),
+    },
+)
+```
+
+Each leaf directory under `scenarios/` is one pytest node — a drifting scenario never
+hides failures in the others, and adding a scenario is adding a directory. The runner
+executes at most once per process; a directory the runner did not produce a result for
+fails naming what it did produce. Within a scenario, all files are checked before one
+aggregated failure.
+
 ## Collecting failures across multiple checks
 
 Without `--remaster`, the first mismatching `check()` fails the test immediately and

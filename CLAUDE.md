@@ -15,6 +15,7 @@ regeneration.
 - `src/pytest_remaster/pandas_io.py` — `dataframe_serializer`, `dataframe_deserializer`
   (requires the `pandas` extra; lazily exported via `__getattr__` in `__init__.py` so
   the core package stays stdlib-pure)
+- `src/pytest_remaster/factory.py` — `golden_case_test`
 - `src/pytest_remaster/patching.py` — `PatchRegistry`
 - `tests/test_plugin.py` — Tests for plugin options and fixtures (via pytester)
 - `tests/test_golden_master.py` — Tests for GoldenMaster (via pytester)
@@ -22,6 +23,7 @@ regeneration.
 - `tests/test_patching.py` — Tests for PatchRegistry (via pytester)
 - `tests/test_matcher.py` — Tests for matcher/deserializer hooks (via pytester)
 - `tests/test_collecting.py` — Tests for collecting() failure aggregation (via pytester)
+- `tests/test_factory.py` — Tests for golden_case_test (via pytester)
 - `tests/test_output_spec.py` — Tests for the Output spec in check_each (via pytester)
 - `tests/test_pandas_io.py` — Tests for pandas helpers (importorskip pandas)
 - `tests/test_tolerance_matcher.py` — Tests for tolerance_matcher (direct calls; it is a
@@ -55,6 +57,9 @@ regeneration.
     extension
 - `PatchRegistry` — `add_file_patch()` for file→mock mappings, `add_patch()` for plain
   mocks, `patcher.mock()` context manager yields dict with loaded data + mock objects
+- `golden_case_test(cases_dir, runner, extractors=, ...)` — ready-made parametrized test
+  factory: leaf dirs → nodes, cached zero-arg runner keyed by case name, collecting()
+  per case, clear failure for missing results
 - `discover_test_cases(base_dir)` — leaf directories → `CaseData`
 - `discover_test_files(base_dir, pattern)` — files by glob → `CaseData`
 - `json_normalizer`, `whitespace_normalizer` — opt-in normalizers for `check()`

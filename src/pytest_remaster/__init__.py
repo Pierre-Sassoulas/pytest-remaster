@@ -3,6 +3,7 @@
 from typing import TYPE_CHECKING, Any
 
 from pytest_remaster.discovery import CaseData, discover_test_cases, discover_test_files
+from pytest_remaster.factory import golden_case_test
 from pytest_remaster.golden_master import (
     GoldenMaster,
     MalformedTestCase,
@@ -31,6 +32,7 @@ __all__ = [
     "dataframe_serializer",  # pylint: disable=undefined-all-variable
     "discover_test_cases",
     "discover_test_files",
+    "golden_case_test",
     "json_normalizer",
     "json_serializer",
     "mock_calls_serializer",
