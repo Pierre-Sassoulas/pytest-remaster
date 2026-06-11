@@ -6,6 +6,7 @@ from pytest_remaster.discovery import CaseData, discover_test_cases, discover_te
 from pytest_remaster.golden_master import (
     GoldenMaster,
     MalformedTestCase,
+    Output,
     json_normalizer,
     mock_calls_serializer,
     resolve_with_override,
@@ -21,6 +22,7 @@ __all__ = [
     "CaseData",
     "GoldenMaster",
     "MalformedTestCase",
+    "Output",
     "PatchRegistry",
     "Tolerance",
     "ToleranceSpec",

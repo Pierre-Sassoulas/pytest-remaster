@@ -22,6 +22,7 @@ regeneration.
 - `tests/test_patching.py` — Tests for PatchRegistry (via pytester)
 - `tests/test_matcher.py` — Tests for matcher/deserializer hooks (via pytester)
 - `tests/test_collecting.py` — Tests for collecting() failure aggregation (via pytester)
+- `tests/test_output_spec.py` — Tests for the Output spec in check_each (via pytester)
 - `tests/test_pandas_io.py` — Tests for pandas helpers (importorskip pandas)
 - `tests/test_tolerance_matcher.py` — Tests for tolerance_matcher (direct calls; it is a
   pure function, pytester only for the fixture integration test)
@@ -42,7 +43,10 @@ regeneration.
   mappings/sequences, raises AssertionError listing values beyond tolerance; NaN == NaN
   by default
   - `collecting()` — context manager deferring strict-mode failures; reports all
-    mismatches in one failure at exit
+    mismatches in one failure at the outermost exit (re-entrant)
+- `Output` — per-suffix spec for `check_each()`: extract + own
+  serializer/normalizer/deserializer/matcher/roundtrip + `name` override (str or
+  callable receiving CaseData); comparison fields override the shared kwargs as a unit
 - `dataframe_serializer(float_format=)` / `dataframe_deserializer(index_col=)` — CSV at
   fixed precision out, column → series mapping back in (`pandas` extra)
 - `CaseData` — returned by discovery, `.input` path + `.expected(index, suffix)` helper

@@ -8,6 +8,7 @@ import json
 import re
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -114,6 +115,57 @@ def resolve_with_override(base: str | Path, override: str | Path | None = None) 
 
 class MalformedTestCase(Exception):
     """Raised when a discovered test case directory is missing required files."""
+
+
+@dataclass(frozen=True)
+class Output:
+    """Per-output spec for :meth:`GoldenMaster.check_each`.
+
+    Lets each suffix use its own serialization and comparison — e.g. a CSV
+    DataFrame next to a JSON metrics file::
+
+        golden_master.check_each(
+            case,
+            runner=run,
+            extractors={
+                ".csv": Output(
+                    lambda r: r.df,
+                    serializer=dataframe_serializer(),
+                    deserializer=dataframe_deserializer(),
+                    matcher=tolerance_matcher(TOL),
+                    roundtrip=True,
+                ),
+                ".stdout": lambda r: r.out,  # bare callable still accepted
+            },
+        )
+
+    ``serializer`` and ``name`` fall back individually to the shared
+    ``check_each`` keyword arguments. The comparison fields (*normalizer*,
+    *deserializer*, *matcher*, *roundtrip*) inherit as a unit: setting any
+    of them replaces the shared comparison entirely, so an output never
+    mixes its own normalizer with an inherited matcher.
+
+    ``name`` overrides the expected file name (default
+    ``expected{suffix}`` via ``case.expected()``); a callable receives the
+    :class:`CaseData` — e.g. ``lambda case: f"{case.input.name}.csv"``.
+    """
+
+    extract: Callable[[Any], Any]
+    serializer: Callable[[Any], str] | None = None
+    normalizer: Callable[[str], str] | None = None
+    deserializer: Callable[[str], Any] | None = None
+    matcher: Callable[[Any, Any], bool] | None = None
+    roundtrip: bool | None = None
+    name: str | Callable[[CaseData], str] | None = None
+
+    def overrides_comparison(self) -> bool:
+        """Whether this output replaces the shared comparison strategy."""
+        return (
+            self.normalizer is not None
+            or self.deserializer is not None
+            or self.matcher is not None
+            or self.roundtrip is not None
+        )
 
 
 class GoldenMaster:
@@ -407,7 +459,7 @@ class GoldenMaster:
         case: CaseData,
         *,
         runner: Callable[[CaseData], Any],
-        extractors: dict[str, Callable[[Any], Any]],
+        extractors: dict[str, Callable[[Any], Any] | Output],
         serializer: Callable[[Any], str] = str,
         normalizer: Callable[[str], str] | None = None,
         deserializer: Callable[[str], Any] | None = None,
@@ -419,14 +471,19 @@ class GoldenMaster:
         Args:
             case: The test case.
             runner: Callable that takes the case and returns a result object.
-            extractors: Mapping of file suffix to extractor function. Each
-                extractor receives the result from ``runner`` and returns
-                the value to compare.
+            extractors: Mapping of file suffix to either an extractor
+                function (receives the result from ``runner``, returns the
+                value to compare) or an :class:`Output` spec carrying
+                per-output serialization, comparison and file naming.
             serializer: Converts each value to string. Default: str().
             normalizer: Optional function applied before comparison.
             deserializer: Optional parser for expected file text. See check().
             matcher: Optional comparison hook. See check().
             roundtrip: Round-trip actual through storage. See check().
+
+        The shared keyword arguments are defaults; an :class:`Output` that
+        sets any comparison field (normalizer, deserializer, matcher,
+        roundtrip) replaces the shared comparison entirely.
 
         """
         try:
@@ -436,16 +493,42 @@ class GoldenMaster:
                 f"{case.input} — {exc.filename or exc}\n"
                 f"  (directory was discovered as a test case but appears malformed)"
             ) from exc
-        for suffix, getter in extractors.items():
+        for suffix, spec in extractors.items():
+            output = spec if isinstance(spec, Output) else Output(extract=spec)
+            if output.overrides_comparison():
+                comparison: dict[str, Any] = {
+                    "normalizer": output.normalizer,
+                    "deserializer": output.deserializer,
+                    "matcher": output.matcher,
+                    "roundtrip": bool(output.roundtrip),
+                }
+            else:
+                comparison = {
+                    "normalizer": normalizer,
+                    "deserializer": deserializer,
+                    "matcher": matcher,
+                    "roundtrip": roundtrip,
+                }
             self.check(
-                getter(result),
-                case.expected(suffix=suffix),
-                serializer=serializer,
-                normalizer=normalizer,
-                deserializer=deserializer,
-                matcher=matcher,
-                roundtrip=roundtrip,
+                output.extract(result),
+                self._output_path(case, suffix, output.name),
+                serializer=output.serializer or serializer,
+                **comparison,
             )
+
+    @staticmethod
+    def _output_path(
+        case: CaseData, suffix: str, name: str | Callable[[CaseData], str] | None
+    ) -> Path:
+        """Resolve the expected file for one check_each() output."""
+        if name is None:
+            return case.expected(suffix=suffix)
+        filename = name(case) if callable(name) else name
+        # Mirror CaseData.expected(): file-mode inputs (with a suffix) get a
+        # sibling file, directory-mode inputs contain the file.
+        if case.input.suffix:
+            return case.input.parent / filename
+        return case.input / filename
 
     def _remaster_file(
         self, actual_str: str, expected_str: str | None, write_path: Path
