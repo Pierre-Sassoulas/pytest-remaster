@@ -20,6 +20,14 @@ pip install pytest-remaster
 remaster-by-default = false  # default: true
 ```
 
+Remaster mode resolves per test: explicit `--remaster`/`--no-remaster` on the command
+line, then the `@pytest.mark.remaster` marker, then `remaster-by-default`. The marker
+overrides the project default for one test or class — `@pytest.mark.remaster(False)`
+pins a fragile golden strict even when the project remasters by default — while the CLI
+wins over the marker, so a deliberate run can always move (or freeze) every baseline.
+For a whole directory, override the `remaster` fixture in its `conftest.py`; for both
+modes inside one test body, construct `GoldenMaster(remaster=...)` directly.
+
 ## Example 1: directory per test case
 
 `discover_test_cases(base_dir)` finds leaf directories and returns `CaseData` with
