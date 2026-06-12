@@ -93,3 +93,98 @@ def test_remaster_ini_override(pytester: pytest.Pytester) -> None:
     )
     result = pytester.runpytest()
     result.assert_outcomes(passed=1)
+
+
+def test_remaster_marker_enables(pytester: pytest.Pytester) -> None:
+    """@pytest.mark.remaster turns remastering on over a strict ini."""
+    pytester.makeini(
+        """
+        [pytest]
+        remaster-by-default = false
+        """
+    )
+    pytester.makepyfile(
+        """
+        import pytest
+
+        @pytest.mark.remaster
+        def test_marked(remaster):
+            assert remaster is True
+
+        def test_unmarked(remaster):
+            assert remaster is False
+        """
+    )
+    result = pytester.runpytest("--strict-markers")
+    result.assert_outcomes(passed=2)
+
+
+def test_remaster_marker_false_pins_strict(pytester: pytest.Pytester) -> None:
+    """remaster(False) keeps one test strict under remaster-by-default=true."""
+    pytester.makepyfile(
+        """
+        import pytest
+
+        @pytest.mark.remaster(False)
+        def test_pinned(remaster):
+            assert remaster is False
+
+        def test_default(remaster):
+            assert remaster is True
+        """
+    )
+    result = pytester.runpytest("--strict-markers")
+    result.assert_outcomes(passed=2)
+
+
+def test_cli_wins_over_marker(pytester: pytest.Pytester) -> None:
+    """Explicit --remaster overrides remaster(False): deliberate runs always can."""
+    pytester.makepyfile(
+        """
+        import pytest
+
+        @pytest.mark.remaster(False)
+        def test_pinned(remaster):
+            assert remaster is True
+
+        @pytest.mark.remaster
+        def test_marked(remaster):
+            assert remaster is True
+        """
+    )
+    result = pytester.runpytest("--remaster", "--strict-markers")
+    result.assert_outcomes(passed=2)
+
+    pytester.makepyfile(
+        """
+        import pytest
+
+        @pytest.mark.remaster
+        def test_marked(remaster):
+            assert remaster is False
+        """
+    )
+    result = pytester.runpytest("--no-remaster", "--strict-markers")
+    result.assert_outcomes(passed=1)
+
+
+def test_remaster_marker_on_class(pytester: pytest.Pytester) -> None:
+    """The marker applies to every test of a marked class."""
+    pytester.makeini(
+        """
+        [pytest]
+        remaster-by-default = false
+        """
+    )
+    pytester.makepyfile(
+        """
+        import pytest
+
+        @pytest.mark.remaster
+        class TestSuite:
+            def test_inherits(self, remaster):
+                assert remaster is True
+        """
+    )
+    result = pytester.runpytest("--strict-markers")
+    result.assert_outcomes(passed=1)
