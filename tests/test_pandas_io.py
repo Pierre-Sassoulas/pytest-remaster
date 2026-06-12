@@ -152,3 +152,92 @@ def test_named_index_compared_with_index_col_none() -> None:
     df.index.name = "t_s"
     columns = dataframe_deserializer(index_col=None)(dataframe_serializer()(df))
     assert columns == {"t_s": [0.0, 0.5], "w_bess_kw": [1.0, 2.0]}
+
+
+def test_scenario_outputs_full_cycle(pytester: pytest.Pytester) -> None:
+    """golden_case_test + scenario_outputs: bless, tolerate, fail."""
+    pytester.makepyfile(
+        """
+        import math
+        from pathlib import Path
+
+        import pandas as pd
+
+        from pytest_remaster import (
+            golden_case_test, scenario_outputs, tolerance_matcher,
+        )
+
+        SCENARIOS = Path(__file__).parent / "scenarios"
+
+
+        def run():
+            return {
+                "nominal": (
+                    pd.DataFrame({"w_bess_kw": [1.0, math.nan]}),
+                    {"max_w_bess_kw": 1.0},
+                ),
+            }
+
+
+        test_scenarios = golden_case_test(
+            SCENARIOS,
+            run,
+            extractors=scenario_outputs(
+                tolerance_matcher({"*w_bess_kw": 0.5})
+            ),
+        )
+        """
+    )
+    scenarios = pytester.path / "scenarios"
+    (scenarios / "nominal").mkdir(parents=True)
+
+    # first run blesses <case>-named goldens and fails for review
+    result = pytester.runpytest("--remaster")
+    result.assert_outcomes(passed=1, errors=1)
+    assert (scenarios / "nominal" / "nominal.csv").exists()
+    assert (scenarios / "nominal" / "nominal.metrics.json").exists()
+
+    # second run is green, goldens untouched
+    result = pytester.runpytest("--no-remaster")
+    result.assert_outcomes(passed=1)
+
+
+def test_scenario_outputs_drift_fails_with_row_report(
+    pytester: pytest.Pytester,
+) -> None:
+    """Beyond tolerance, the failure names the column and row."""
+    pytester.makepyfile(
+        """
+        from pathlib import Path
+
+        import pandas as pd
+
+        from pytest_remaster import (
+            golden_case_test, scenario_outputs, tolerance_matcher,
+        )
+
+        SCENARIOS = Path(__file__).parent / "scenarios"
+
+
+        def run():
+            return {"nominal": (pd.DataFrame({"w_bess_kw": [9.0]}), {"m": 0.0})}
+
+
+        test_scenarios = golden_case_test(
+            SCENARIOS,
+            run,
+            extractors=scenario_outputs(
+                tolerance_matcher({"*w_bess_kw": 0.5})
+            ),
+        )
+        """
+    )
+    scenarios = pytester.path / "scenarios"
+    case = scenarios / "nominal"
+    case.mkdir(parents=True)
+    (case / "nominal.csv").write_text(",w_bess_kw\n0,1\n")
+    (case / "nominal.metrics.json").write_text('{\n  "m": 0.0\n}\n')
+
+    result = pytester.runpytest("--no-remaster")
+    result.assert_outcomes(failed=1)
+    result.stdout.fnmatch_lines(["*w_bess_kw[[]0[]]:*tol=0.5*"])

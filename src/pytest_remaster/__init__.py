@@ -18,7 +18,11 @@ from pytest_remaster.matchers import Tolerance, ToleranceSpec, tolerance_matcher
 from pytest_remaster.patching import PatchRegistry
 
 if TYPE_CHECKING:
-    from pytest_remaster.pandas_io import dataframe_deserializer, dataframe_serializer
+    from pytest_remaster.pandas_io import (
+        dataframe_deserializer,
+        dataframe_serializer,
+        scenario_outputs,
+    )
 
 __all__ = [
     "CaseData",
@@ -37,11 +41,16 @@ __all__ = [
     "json_serializer",
     "mock_calls_serializer",
     "resolve_with_override",
+    "scenario_outputs",  # pylint: disable=undefined-all-variable
     "tolerance_matcher",
     "whitespace_normalizer",
 ]
 
-_PANDAS_EXPORTS = frozenset({"dataframe_serializer", "dataframe_deserializer"})
+_PANDAS_EXPORTS = frozenset({
+    "dataframe_serializer",
+    "dataframe_deserializer",
+    "scenario_outputs",
+})
 
 
 def __getattr__(name: str) -> Any:
