@@ -211,6 +211,23 @@ golden_master.check(
 parametrize precision and index handling. The core package stays stdlib-pure: the
 helpers import pandas only when first used.
 
+For the common simulation shape — a runner returning `{case_name: (df, metrics)}` —
+`scenario_outputs` bundles both files' specs, so a whole golden test is:
+
+```python
+from pytest_remaster import golden_case_test, scenario_outputs, tolerance_matcher
+
+test_scenarios = golden_case_test(
+    Path(__file__).parent / "scenarios",
+    run_simulation,  # () -> {name: (df, metrics)}
+    extractors=scenario_outputs(tolerance_matcher({"hz": 1e-3, "*_kw": 0.5})),
+)
+```
+
+Goldens land inside each case directory as `<case>.csv` and `<case>.metrics.json`
+(suffixes configurable via `df_suffix=` / `metrics_suffix=`), both compared `roundtrip`
+through the given matcher.
+
 **Index footgun:** with the default `index_col=0` the index is _excluded_ from
 comparison — a time axis that shifts while values stay identical passes silently. To
 compare it, name the index (`df.index.name = "t_s"`) and pass
