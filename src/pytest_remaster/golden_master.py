@@ -6,7 +6,7 @@ import difflib
 import itertools
 import json
 import re
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -326,7 +326,8 @@ class GoldenMaster:
             actual, expected_path, serializer
         )
         if roundtrip:
-            actual_value = deserializer(actual_str)  # type: ignore[misc]
+            assert deserializer is not None  # guaranteed by roundtrip validation
+            actual_value = deserializer(actual_str)
         self._check_resolved(
             actual_value,
             actual_str,
@@ -490,7 +491,7 @@ class GoldenMaster:
         case: CaseData,
         *,
         runner: Callable[[CaseData], Any],
-        extractors: dict[str, Callable[[Any], Any] | Output],
+        extractors: Mapping[str, Callable[[Any], Any] | Output],
         serializer: Callable[[Any], str] = str,
         normalizer: Callable[[str], str] | None = None,
         deserializer: Callable[[str], Any] | None = None,
@@ -526,25 +527,15 @@ class GoldenMaster:
             ) from exc
         for suffix, spec in extractors.items():
             output = spec if isinstance(spec, Output) else Output(extract=spec)
-            if output.overrides_comparison():
-                comparison: dict[str, Any] = {
-                    "normalizer": output.normalizer,
-                    "deserializer": output.deserializer,
-                    "matcher": output.matcher,
-                    "roundtrip": bool(output.roundtrip),
-                }
-            else:
-                comparison = {
-                    "normalizer": normalizer,
-                    "deserializer": deserializer,
-                    "matcher": matcher,
-                    "roundtrip": roundtrip,
-                }
+            overrides = output.overrides_comparison()
             self.check(
                 output.extract(result),
                 self._output_path(case, suffix, output.name),
                 serializer=output.serializer or serializer,
-                **comparison,
+                normalizer=output.normalizer if overrides else normalizer,
+                deserializer=output.deserializer if overrides else deserializer,
+                matcher=output.matcher if overrides else matcher,
+                roundtrip=bool(output.roundtrip) if overrides else roundtrip,
             )
 
     @staticmethod
@@ -554,7 +545,7 @@ class GoldenMaster:
         """Resolve the expected file for one check_each() output."""
         if name is None:
             return case.expected(suffix=suffix)
-        filename = name(case) if callable(name) else name
+        filename = name if isinstance(name, str) else name(case)
         # Mirror CaseData.expected(): file-mode inputs (with a suffix) get a
         # sibling file, directory-mode inputs contain the file.
         if case.input.suffix:
@@ -704,9 +695,14 @@ class GoldenMaster:
                 ) from exc
 
         pattern = rf"expected_\d+{re.escape(suffix)}$"
+
+        def _index(path: Path) -> int:
+            match = re.search(r"\d+", path.name)
+            assert match is not None  # every name matched the \d+ pattern above
+            return int(match.group())
+
         existing = sorted(
-            (p for p in directory.iterdir() if re.match(pattern, p.name)),
-            key=lambda p: int(re.search(r"\d+", p.name).group()),  # type: ignore[union-attr]
+            (p for p in directory.iterdir() if re.match(pattern, p.name)), key=_index
         )
 
         for i, actual in enumerate(actuals):

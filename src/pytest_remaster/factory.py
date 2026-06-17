@@ -17,7 +17,7 @@ def golden_case_test(
     cases_dir: str | Path,
     runner: Callable[[], Mapping[str, Any]],
     *,
-    extractors: dict[str, Callable[[Any], Any] | Output],
+    extractors: Mapping[str, Callable[[Any], Any] | Output],
     serializer: Callable[[Any], str] = str,
     normalizer: Callable[[str], str] | None = None,
     deserializer: Callable[[str], Any] | None = None,
