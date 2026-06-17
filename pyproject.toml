@@ -23,7 +23,16 @@ classifiers = [
 ]
 dynamic = [ "version" ]
 dependencies = [ "pytest>=7" ]
-optional-dependencies.dev = [ "pandas", "pre-commit", "pylint>4", "pytest-cov" ]
+optional-dependencies.dev = [
+  "mypy",
+  "pandas",
+  "pandas-stubs",
+  "pre-commit",
+  "pylint>4",
+  "pyright",
+  "pytest-cov",
+  "ty"
+]
 optional-dependencies.pandas = [ "pandas" ]
 urls.Homepage = "https://github.com/Pierre-Sassoulas/pytest-remaster"
 entry-points.pytest11.remaster = "pytest_remaster.plugin"

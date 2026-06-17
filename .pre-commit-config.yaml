@@ -36,6 +36,22 @@ repos:
         args: ["--strict"]
         exclude: "tests/demo_pylint/platform_checker\\.py"
         additional_dependencies: [pytest>=7.0, pandas-stubs]
+  - repo: https://github.com/RobertCraigie/pyright-python
+    rev: v1.1.410
+    hooks:
+      - id: pyright
+        args: ["src"]
+        pass_filenames: false
+        additional_dependencies: [pytest>=7.0, pandas-stubs]
+  - repo: local
+    hooks:
+      - id: ty
+        name: ty
+        entry: ty check src
+        language: python
+        pass_filenames: false
+        types: [python]
+        additional_dependencies: [ty, pytest>=7.0, pandas-stubs]
   - repo: https://github.com/rbubley/mirrors-prettier
     rev: v3.8.1
     hooks:
