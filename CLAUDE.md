@@ -19,6 +19,8 @@ regeneration.
 - `src/pytest_remaster/patching.py` — `PatchRegistry`
 - `tests/test_plugin.py` — Tests for plugin options and fixtures (via pytester)
 - `tests/test_golden_master.py` — Tests for GoldenMaster (via pytester)
+- `tests/test_dimensions.py` — Tests for override_path/dimensions resolution and
+  remaster targets (via pytester)
 - `tests/test_discovery.py` — Tests for discovery (via pytester)
 - `tests/test_patching.py` — Tests for PatchRegistry (via pytester)
 - `tests/test_matcher.py` — Tests for matcher/deserializer hooks (via pytester)
