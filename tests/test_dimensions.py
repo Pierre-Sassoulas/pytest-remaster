@@ -351,12 +351,10 @@ def test_dimensions_falls_back_to_base(pytester: pytest.Pytester) -> None:
     result.assert_outcomes(passed=1)
 
 
-def test_dimensions_remaster_writes_most_specific(pytester: pytest.Pytester) -> None:
-    """check() with dimensions remasters to the most specific path."""
+def test_dimensions_remaster_updates_base(pytester: pytest.Pytester) -> None:
+    """check() with dimensions rewrites the base when no override exists."""
     pytester.makepyfile(
         """
-        from pathlib import Path
-
         def test_remaster(golden_master, tmp_path):
             base = tmp_path / "a.txt"
             base.write_text("generic\\n")
@@ -364,14 +362,209 @@ def test_dimensions_remaster_writes_most_specific(pytester: pytest.Pytester) -> 
                 "new output", base,
                 dimensions={"version": "312", "platform": "linux"},
             )
-            most_specific = tmp_path / "a.312.linux.txt"
-            assert most_specific.read_text() == "new output\\n"
+            assert base.read_text() == "new output\\n"
+            assert list(tmp_path.iterdir()) == [base]
+        """
+    )
+    result = pytester.runpytest("--remaster")
+    result.assert_outcomes(passed=1, errors=1)
+    result.stdout.fnmatch_lines(["*updated*a.txt*"])
+
+
+def test_dimensions_remaster_updates_resolved_override(
+    pytester: pytest.Pytester,
+) -> None:
+    """check() with dimensions rewrites the override that was compared."""
+    pytester.makepyfile(
+        """
+        def test_remaster(golden_master, tmp_path):
+            base = tmp_path / "a.txt"
+            base.write_text("generic\\n")
+            version_only = tmp_path / "a.312.txt"
+            version_only.write_text("old 3.12\\n")
+            golden_master.check(
+                "new 3.12", base,
+                dimensions={"version": "312", "platform": "linux"},
+            )
+            assert version_only.read_text() == "new 3.12\\n"
+            assert base.read_text() == "generic\\n"
+            assert not (tmp_path / "a.312.linux.txt").exists()
+        """
+    )
+    result = pytester.runpytest("--remaster")
+    result.assert_outcomes(passed=1, errors=1)
+    result.stdout.fnmatch_lines(["*updated*a.312.txt*"])
+
+
+def test_dimensions_remaster_override_matching_base_deleted(
+    pytester: pytest.Pytester,
+) -> None:
+    """A rewritten override identical to the base is deleted."""
+    pytester.makepyfile(
+        """
+        def test_remaster(golden_master, tmp_path):
+            base = tmp_path / "a.txt"
+            base.write_text("generic\\n")
+            override = tmp_path / "a.312.txt"
+            override.write_text("old 3.12\\n")
+            golden_master.check(
+                "generic", base,
+                dimensions={"version": "312", "platform": "linux"},
+            )
+            assert not override.exists()
             assert base.read_text() == "generic\\n"
         """
     )
     result = pytester.runpytest("--remaster")
     result.assert_outcomes(passed=1, errors=1)
-    result.stdout.fnmatch_lines(["*created*a.312.linux.txt*"])
+    result.stdout.fnmatch_lines([
+        "*updated*a.312.txt*",
+        "*deleted (redundant)*a.312.txt*",
+    ])
+
+
+SPLIT_TEST = """
+    import pytest
+
+    {marker}
+    def test_remaster(golden_master, tmp_path):
+        base = tmp_path / "a.txt"
+        base.write_text("generic\\n")
+        golden_master.check(
+            "new output", base,
+            dimensions={{
+                "version": "312", "platform": "linux", "implementation": "pypy",
+            }},
+        )
+        assert (tmp_path / "{written}").read_text() == "new output\\n"
+        assert base.read_text() == "generic\\n"
+        assert len(list(tmp_path.iterdir())) == 2
+    """
+
+
+@pytest.mark.parametrize(
+    ("split_on", "written"),
+    [
+        ("implementation", "a.pypy.txt"),
+        ("version,implementation", "a.312.pypy.txt"),
+        ("implementation, version", "a.312.pypy.txt"),
+        ("all", "a.312.linux.pypy.txt"),
+    ],
+)
+def test_dimensions_remaster_split_on_option(
+    pytester: pytest.Pytester, split_on: str, written: str
+) -> None:
+    """--remaster-split-on writes an override for the named dimensions."""
+    pytester.makepyfile(SPLIT_TEST.format(marker="", written=written))
+    result = pytester.runpytest("--remaster", f"--remaster-split-on={split_on}")
+    result.assert_outcomes(passed=1, errors=1)
+    result.stdout.fnmatch_lines([f"*created*{written}*"])
+
+
+@pytest.mark.parametrize(
+    ("split", "written"),
+    [
+        ('["implementation"]', "a.pypy.txt"),
+        ('"implementation"', "a.pypy.txt"),
+        ('"all"', "a.312.linux.pypy.txt"),
+    ],
+)
+def test_dimensions_remaster_split_marker(
+    pytester: pytest.Pytester, split: str, written: str
+) -> None:
+    """@pytest.mark.remaster(split=...) writes an override for those dimensions."""
+    marker = f"@pytest.mark.remaster(split={split})"
+    pytester.makepyfile(SPLIT_TEST.format(marker=marker, written=written))
+    result = pytester.runpytest("--remaster", "--strict-markers")
+    result.assert_outcomes(passed=1, errors=1)
+    result.stdout.fnmatch_lines([f"*created*{written}*"])
+
+
+def test_dimensions_split_option_wins_over_marker(pytester: pytest.Pytester) -> None:
+    """--remaster-split-on overrides the marker's split."""
+    marker = '@pytest.mark.remaster(split=["version"])'
+    pytester.makepyfile(SPLIT_TEST.format(marker=marker, written="a.pypy.txt"))
+    result = pytester.runpytest(
+        "--remaster", "--remaster-split-on=implementation", "--strict-markers"
+    )
+    result.assert_outcomes(passed=1, errors=1)
+
+
+def test_dimensions_split_keeps_compared_dimensions(pytester: pytest.Pytester) -> None:
+    """Splitting an existing override adds to its dimensions, so it wins next run."""
+    pytester.makepyfile(
+        """
+        def test_remaster(golden_master, tmp_path):
+            base = tmp_path / "a.txt"
+            base.write_text("generic\\n")
+            version_only = tmp_path / "a.312.txt"
+            version_only.write_text("3.12\\n")
+            dimensions = {"version": "312", "implementation": "pypy"}
+            golden_master.check("pypy 3.12", base, dimensions=dimensions)
+            assert (tmp_path / "a.312.pypy.txt").read_text() == "pypy 3.12\\n"
+            assert version_only.read_text() == "3.12\\n"
+            assert not (tmp_path / "a.pypy.txt").exists()
+        """
+    )
+    result = pytester.runpytest("--remaster", "--remaster-split-on=implementation")
+    result.assert_outcomes(passed=1, errors=1)
+    result.stdout.fnmatch_lines(["*created*a.312.pypy.txt*"])
+
+
+def test_dimensions_split_on_unknown_dimension(pytester: pytest.Pytester) -> None:
+    """A split naming none of the check's dimensions is an error."""
+    pytester.makepyfile(
+        """
+        import pytest
+
+        def test_typo(golden_master, tmp_path):
+            base = tmp_path / "a.txt"
+            base.write_text("generic\\n")
+            with pytest.raises(ValueError, match="names none of the dimensions"):
+                golden_master.check(
+                    "generic", base, dimensions={"implementation": "pypy"}
+                )
+        """
+    )
+    result = pytester.runpytest("--remaster", "--remaster-split-on=implemntation")
+    result.assert_outcomes(passed=1)
+
+
+def test_dimensions_split_marker_keeps_remaster_mode(pytester: pytest.Pytester) -> None:
+    """remaster(split=...) alone does not enable remastering."""
+    pytester.makeini("[pytest]\nremaster-by-default = false\n")
+    pytester.makepyfile(
+        """
+        import pytest
+
+        @pytest.mark.remaster(split=["implementation"])
+        def test_strict(golden_master, tmp_path):
+            base = tmp_path / "a.txt"
+            base.write_text("generic\\n")
+            golden_master.check(
+                "new output", base,
+                dimensions={"version": "312", "implementation": "pypy"},
+            )
+        """
+    )
+    result = pytester.runpytest("--strict-markers")
+    result.assert_outcomes(failed=1)
+    result.stdout.fnmatch_lines([
+        "*Mismatch at*a.txt*",
+        "*--remaster to update*a.pypy.txt*",
+    ])
+
+
+def test_dimensions_split_marker_combined_with_enabled(
+    pytester: pytest.Pytester,
+) -> None:
+    """remaster(True, split=...) enables remastering into the new override."""
+    pytester.makeini("[pytest]\nremaster-by-default = false\n")
+    marker = '@pytest.mark.remaster(True, split=["implementation"])'
+    pytester.makepyfile(SPLIT_TEST.format(marker=marker, written="a.pypy.txt"))
+    result = pytester.runpytest("--strict-markers")
+    result.assert_outcomes(passed=1, errors=1)
+    result.stdout.fnmatch_lines(["*created*a.pypy.txt*"])
 
 
 def test_dimensions_dedup_against_less_specific(pytester: pytest.Pytester) -> None:

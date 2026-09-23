@@ -5,8 +5,9 @@ regeneration.
 
 ## Project structure
 
-- `src/pytest_remaster/plugin.py` — Pytest plugin: `--remaster`/`--no-remaster` options,
-  `remaster` and `golden_master` fixtures
+- `src/pytest_remaster/plugin.py` — Pytest plugin: `--remaster`/`--no-remaster`/
+  `--remaster-split-on` options, `remaster`, `remaster_split` and `golden_master`
+  fixtures
 - `src/pytest_remaster/discovery.py` — `CaseData`, `discover_test_cases`,
   `discover_test_files`
 - `src/pytest_remaster/golden_master.py` — `GoldenMaster`, `MalformedTestCase`,

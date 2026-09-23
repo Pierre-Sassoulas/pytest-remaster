@@ -345,7 +345,7 @@ When expected output varies by Python version, platform, or implementation, use
 
 Given a base file and a set of dimensions, `check()` generates a priority-ordered chain
 of override paths and uses the most specific existing file for comparison. Remastering
-writes to the most specific path, keeping less specific files untouched. Redundant
+rewrites that same file, so every environment reading it stays in sync. Redundant
 overrides (identical to a less specific file) are deleted automatically.
 
 ```
@@ -393,10 +393,33 @@ def test_lint(case: CaseData, golden_master: GoldenMaster) -> None:
     )
 ```
 
-On mismatch, `--remaster` creates the most specific override (e.g.
-`arguments.312.linux.txt`). If the new file is identical to a less specific one (e.g.
-`arguments.312.txt`), it is removed as redundant. This way, only the files that truly
-differ between environments are kept.
+On mismatch, `--remaster` rewrites the file that was compared: `arguments.txt` when no
+override exists yet, or the existing override (e.g. `arguments.312.txt`). If the
+rewritten override is identical to a less specific file, it is removed as redundant.
+
+When the output truly differs in one environment, split it into a new override by naming
+the dimensions it differs on, for the whole run or for one test:
+
+```bash
+pytest --remaster --remaster-split-on=platform          # arguments.linux.txt
+pytest --remaster --remaster-split-on=version,platform  # arguments.312.linux.txt
+pytest --remaster --remaster-split-on=all               # most specific override
+```
+
+```python
+@pytest.mark.remaster(split=["platform"])
+def test_lint_on_linux(golden_master): ...
+```
+
+The new override keeps the dimensions of the file it was compared with: splitting
+`arguments.312.txt` on `platform` writes `arguments.312.linux.txt`, which wins over
+`arguments.312.txt` on the next run. A split naming none of the check's dimensions
+raises `ValueError`, so a typo never passes silently. `--remaster-split-on` wins over
+the marker.
+
+`remaster(split=...)` only picks the file; it does not turn remastering on. Combine it
+as `@pytest.mark.remaster(True, split=["platform"])` to do both. This way, only the
+files that truly differ between environments are kept.
 
 ### Input file resolution with `resolve_with_override`
 

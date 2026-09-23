@@ -6,7 +6,7 @@ import difflib
 import itertools
 import json
 import re
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -122,14 +122,45 @@ def _build_override_chain(base: str | Path, **dimensions: str) -> list[Path]:
 
     """
     base = Path(base)
+    return [_override_path(base, dimensions, keys) for keys in _key_subsets(dimensions)]
+
+
+def _key_subsets(dimensions: Mapping[str, str]) -> Iterator[tuple[str, ...]]:
+    """Yield every non-empty subset of the keys, in override chain order."""
     keys = list(dimensions)
-    result: list[Path] = []
     # From all dimensions down to single dimension
     for size in range(len(keys), 0, -1):
-        for combo in itertools.combinations(keys, size):
-            segment = ".".join(dimensions[k] for k in combo)
-            result.append(base.parent / f"{base.stem}.{segment}{base.suffix}")
-    return result
+        yield from itertools.combinations(keys, size)
+
+
+def _override_path(
+    base: Path, dimensions: Mapping[str, str], keys: Collection[str]
+) -> Path:
+    """Return the override of *base* for the given subset of *dimensions*."""
+    if not keys:
+        return base
+    segment = ".".join(value for key, value in dimensions.items() if key in keys)
+    return base.parent / f"{base.stem}.{segment}{base.suffix}"
+
+
+def _split_target(
+    base: Path, dimensions: Mapping[str, str], compare_path: Path, split: set[str]
+) -> Path:
+    """Return the override splitting *compare_path* further on *split*.
+
+    Keeps the dimensions of the compared override and adds the split ones,
+    so the new file is more specific than the one it replaces and wins
+    the next resolution.
+    """
+    compared = next(
+        (
+            set(keys)
+            for keys in _key_subsets(dimensions)
+            if _override_path(base, dimensions, keys) == compare_path
+        ),
+        set(),
+    )
+    return _override_path(base, dimensions, compared | split)
 
 
 def resolve_with_override(base: str | Path, override: str | Path | None = None) -> Path:
@@ -202,8 +233,15 @@ class Output:
 class GoldenMaster:
     """Golden master comparison with optional auto-regeneration."""
 
-    def __init__(self, remaster: bool, config: Config | None = None) -> None:
+    def __init__(
+        self,
+        remaster: bool,
+        config: Config | None = None,
+        *,
+        split: str | Sequence[str] | None = None,
+    ) -> None:
         self._remaster = remaster
+        self._split = split
         self._config = config
         self._updated: list[str] = []
         self._collecting_depth = 0
@@ -322,6 +360,7 @@ class GoldenMaster:
         )
 
         chain = self._resolve_chain(expected_path, override_path, dimensions)
+        split = self._split_keys(dimensions)
         actual_value, actual_str = self._resolve_actual(
             actual, expected_path, serializer
         )
@@ -334,10 +373,26 @@ class GoldenMaster:
             expected_path,
             chain,
             dimensions=dimensions,
+            split=split,
             normalizer=normalizer,
             deserializer=deserializer,
             matcher=matcher,
         )
+
+    def _split_keys(self, dimensions: dict[str, str] | None) -> set[str] | None:
+        """Return the dimension names to split on for this check, if any."""
+        if self._split is None or dimensions is None:
+            return None
+        if self._split == "all":
+            return set(dimensions)
+        names = [self._split] if isinstance(self._split, str) else list(self._split)
+        if not (keys := set(names) & set(dimensions)):
+            msg = (
+                f"remaster split {names} names none of the dimensions"
+                f" {list(dimensions)}"
+            )
+            raise ValueError(msg)
+        return keys
 
     @staticmethod
     def _validate_check_args(
@@ -370,12 +425,13 @@ class GoldenMaster:
         chain: list[Path],
         *,
         dimensions: dict[str, str] | None,
+        split: set[str] | None,
         normalizer: Callable[[str], str] | None,
         deserializer: Callable[[str], Any] | None,
         matcher: Callable[[Any, Any], bool] | None,
     ) -> None:
         # Resolution: first existing file in chain, else base
-        compare_path, fallback_paths = self._resolve_compare(expected_path, chain)
+        compare_path = self._resolve_compare(expected_path, chain)
 
         try:
             expected_str = compare_path.read_text(encoding="utf-8").rstrip()
@@ -394,24 +450,28 @@ class GoldenMaster:
             matched = self._content_matches(actual_str, expected_str, normalizer)
             detail = None
         if matched:
-            self._dedup_chain(compare_path, fallback_paths, expected_path, normalizer)
+            self._dedup_chain(compare_path, chain, expected_path, normalizer)
             return
 
-        # New test with dimensions (no files exist): create the base file.
-        # Existing test or explicit override_path: write to chain[0].
-        write_path = expected_path
-        if chain and not (dimensions is not None and expected_str is None):
-            write_path = chain[0]
+        # override_path: always the override.  dimensions: the file that was
+        # compared, so other environments reading it stay in sync (the base
+        # file for a new test); split further on the split dimensions if any.
+        if dimensions is None:
+            write_path = chain[0] if chain else expected_path
+        elif split is not None and expected_str is not None:
+            write_path = _split_target(expected_path, dimensions, compare_path, split)
+        else:
+            write_path = compare_path
         if self._remaster:
             self._remaster_file(
                 normalizer(actual_str) if normalizer else actual_str,
                 expected_str,
                 write_path,
             )
-            self._dedup_chain(write_path, fallback_paths, expected_path, normalizer)
+            self._dedup_chain(write_path, chain, expected_path, normalizer)
         else:
             self._fail_mismatch(
-                actual_str, expected_str, expected_path, write_path, detail=detail
+                actual_str, expected_str, compare_path, write_path, detail=detail
             )
 
     @staticmethod
@@ -427,14 +487,12 @@ class GoldenMaster:
         return []
 
     @staticmethod
-    def _resolve_compare(
-        expected_path: Path, chain: Sequence[Path]
-    ) -> tuple[Path, list[Path]]:
-        """Return (compare_path, less_specific_paths) from the chain."""
-        for i, path in enumerate(chain):
+    def _resolve_compare(expected_path: Path, chain: Sequence[Path]) -> Path:
+        """Return the first existing path of the chain, else the base."""
+        for path in chain:
             if path.exists():
-                return path, list(chain[i + 1 :])
-        return expected_path, []
+                return path
+        return expected_path
 
     @staticmethod
     def _resolve_actual(
@@ -569,14 +627,15 @@ class GoldenMaster:
     def _dedup_chain(
         self,
         current: Path,
-        fallback_paths: list[Path],
+        chain: Sequence[Path],
         base: Path,
         normalizer: Callable[[str], str] | None,
     ) -> None:
         """Delete *current* if identical to any less-specific file."""
-        if not current.exists():
+        if not current.exists() or current not in chain:
             return
         # Check against each less-specific override, then the base
+        fallback_paths = chain[chain.index(current) + 1 :]
         candidates = [p for p in fallback_paths if p.exists()]
         candidates.append(base)
         current_content = current.read_text(encoding="utf-8").rstrip()
