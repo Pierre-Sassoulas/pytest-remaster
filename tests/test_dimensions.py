@@ -443,25 +443,6 @@ SPLIT_TEST = """
 
 
 @pytest.mark.parametrize(
-    ("split_on", "written"),
-    [
-        ("implementation", "a.pypy.txt"),
-        ("version,implementation", "a.312.pypy.txt"),
-        ("implementation, version", "a.312.pypy.txt"),
-        ("all", "a.312.linux.pypy.txt"),
-    ],
-)
-def test_dimensions_remaster_split_on_option(
-    pytester: pytest.Pytester, split_on: str, written: str
-) -> None:
-    """--remaster-split-on writes an override for the named dimensions."""
-    pytester.makepyfile(SPLIT_TEST.format(marker="", written=written))
-    result = pytester.runpytest("--remaster", f"--remaster-split-on={split_on}")
-    result.assert_outcomes(passed=1, errors=1)
-    result.stdout.fnmatch_lines([f"*created*{written}*"])
-
-
-@pytest.mark.parametrize(
     ("split", "written"),
     [
         ('["implementation"]', "a.pypy.txt"),
@@ -480,20 +461,13 @@ def test_dimensions_remaster_split_marker(
     result.stdout.fnmatch_lines([f"*created*{written}*"])
 
 
-def test_dimensions_split_option_wins_over_marker(pytester: pytest.Pytester) -> None:
-    """--remaster-split-on overrides the marker's split."""
-    marker = '@pytest.mark.remaster(split=["version"])'
-    pytester.makepyfile(SPLIT_TEST.format(marker=marker, written="a.pypy.txt"))
-    result = pytester.runpytest(
-        "--remaster", "--remaster-split-on=implementation", "--strict-markers"
-    )
-    result.assert_outcomes(passed=1, errors=1)
-
-
 def test_dimensions_split_keeps_compared_dimensions(pytester: pytest.Pytester) -> None:
     """Splitting an existing override adds to its dimensions, so it wins next run."""
     pytester.makepyfile(
         """
+        import pytest
+
+        @pytest.mark.remaster(split=["implementation"])
         def test_remaster(golden_master, tmp_path):
             base = tmp_path / "a.txt"
             base.write_text("generic\\n")
@@ -506,17 +480,18 @@ def test_dimensions_split_keeps_compared_dimensions(pytester: pytest.Pytester) -
             assert not (tmp_path / "a.pypy.txt").exists()
         """
     )
-    result = pytester.runpytest("--remaster", "--remaster-split-on=implementation")
+    result = pytester.runpytest("--remaster", "--strict-markers")
     result.assert_outcomes(passed=1, errors=1)
     result.stdout.fnmatch_lines(["*created*a.312.pypy.txt*"])
 
 
-def test_dimensions_split_on_unknown_dimension(pytester: pytest.Pytester) -> None:
+def test_dimensions_split_unknown_dimension(pytester: pytest.Pytester) -> None:
     """A split naming none of the check's dimensions is an error."""
     pytester.makepyfile(
         """
         import pytest
 
+        @pytest.mark.remaster(split=["implemntation"])
         def test_typo(golden_master, tmp_path):
             base = tmp_path / "a.txt"
             base.write_text("generic\\n")
@@ -526,7 +501,7 @@ def test_dimensions_split_on_unknown_dimension(pytester: pytest.Pytester) -> Non
                 )
         """
     )
-    result = pytester.runpytest("--remaster", "--remaster-split-on=implemntation")
+    result = pytester.runpytest("--remaster", "--strict-markers")
     result.assert_outcomes(passed=1)
 
 

@@ -397,29 +397,27 @@ On mismatch, `--remaster` rewrites the file that was compared: `arguments.txt` w
 override exists yet, or the existing override (e.g. `arguments.312.txt`). If the
 rewritten override is identical to a less specific file, it is removed as redundant.
 
-When the output truly differs in one environment, split it into a new override by naming
-the dimensions it differs on, for the whole run or for one test:
-
-```bash
-pytest --remaster --remaster-split-on=platform          # arguments.linux.txt
-pytest --remaster --remaster-split-on=version,platform  # arguments.312.linux.txt
-pytest --remaster --remaster-split-on=all               # most specific override
-```
+When the output of one test truly differs in one environment, split it into a new
+override by naming the dimensions it differs on with the `remaster` marker:
 
 ```python
-@pytest.mark.remaster(split=["platform"])
+@pytest.mark.remaster(split=["platform"])  # arguments.linux.txt
 def test_lint_on_linux(golden_master): ...
 ```
 
-The new override keeps the dimensions of the file it was compared with: splitting
-`arguments.312.txt` on `platform` writes `arguments.312.linux.txt`, which wins over
-`arguments.312.txt` on the next run. A split naming none of the check's dimensions
-raises `ValueError`, so a typo never passes silently. `--remaster-split-on` wins over
-the marker.
+`split=["version", "platform"]` writes `arguments.312.linux.txt`, and `split="all"`
+writes the most specific override. The new override keeps the dimensions of the file it
+was compared with: splitting `arguments.312.txt` on `platform` writes
+`arguments.312.linux.txt`, which wins over `arguments.312.txt` on the next run. A split
+naming none of the check's dimensions raises `ValueError`, so a typo never passes
+silently.
 
 `remaster(split=...)` only picks the file; it does not turn remastering on. Combine it
-as `@pytest.mark.remaster(True, split=["platform"])` to do both. This way, only the
-files that truly differ between environments are kept.
+as `@pytest.mark.remaster(True, split=["platform"])` to do both.
+
+Splitting only matters once: when the override exists, a plain `--remaster` keeps
+rewriting it. The marker may stay, but then every environment gets its own override on
+its next change, and the base file is no longer read by any of them.
 
 ### Input file resolution with `resolve_with_override`
 
