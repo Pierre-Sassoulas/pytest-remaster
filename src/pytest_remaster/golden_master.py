@@ -386,13 +386,13 @@ class GoldenMaster:
         if self._split == "all":
             return set(dimensions)
         names = [self._split] if isinstance(self._split, str) else list(self._split)
-        if not (keys := set(names) & set(dimensions)):
+        if unknown := set(names) - set(dimensions):
             msg = (
-                f"remaster split {names} names none of the dimensions"
-                f" {list(dimensions)}"
+                f"remaster split names unknown dimensions {sorted(unknown)};"
+                f" the check has {list(dimensions)}"
             )
             raise ValueError(msg)
-        return keys
+        return set(names)
 
     @staticmethod
     def _validate_check_args(

@@ -409,7 +409,7 @@ def test_lint_on_linux(golden_master): ...
 writes the most specific override. The new override keeps the dimensions of the file it
 was compared with: splitting `arguments.312.txt` on `platform` writes
 `arguments.312.linux.txt`, which wins over `arguments.312.txt` on the next run. A split
-naming none of the check's dimensions raises `ValueError`, so a typo never passes
+name missing from the check's dimensions raises `ValueError`, so a typo never passes
 silently.
 
 `remaster(split=...)` only picks the file; it does not turn remastering on. Combine it

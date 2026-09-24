@@ -485,20 +485,28 @@ def test_dimensions_split_keeps_compared_dimensions(pytester: pytest.Pytester) -
     result.stdout.fnmatch_lines(["*created*a.312.pypy.txt*"])
 
 
-def test_dimensions_split_unknown_dimension(pytester: pytest.Pytester) -> None:
-    """A split naming none of the check's dimensions is an error."""
+@pytest.mark.parametrize("split", [["implemntation"], ["implemntation", "platform"]])
+def test_dimensions_split_unknown_dimension(
+    pytester: pytest.Pytester, split: list[str]
+) -> None:
+    """Any split name missing from the check's dimensions is an error."""
     pytester.makepyfile(
-        """
+        f"""
         import pytest
 
-        @pytest.mark.remaster(split=["implemntation"])
+        @pytest.mark.remaster(split={split!r})
         def test_typo(golden_master, tmp_path):
             base = tmp_path / "a.txt"
             base.write_text("generic\\n")
-            with pytest.raises(ValueError, match="names none of the dimensions"):
+            with pytest.raises(ValueError) as excinfo:
                 golden_master.check(
-                    "generic", base, dimensions={"implementation": "pypy"}
+                    "generic", base,
+                    dimensions={{"implementation": "pypy", "platform": "linux"}},
                 )
+            assert str(excinfo.value) == (
+                "remaster split names unknown dimensions ['implemntation'];"
+                " the check has ['implementation', 'platform']"
+            )
         """
     )
     result = pytester.runpytest("--remaster", "--strict-markers")
