@@ -44,7 +44,7 @@ entry-points.pytest11.remaster = "pytest_remaster.plugin"
 target-version = "py310"
 line-length = 88
 format.skip-magic-trailing-comma = true
-lint.select = [
+lint.extend-select = [
   "B",      # bugbear
   "D",      # pydocstyle
   "E",      # pycodestyle
