@@ -1,0 +1,45 @@
+# Import Linter contracts — https://import-linter.readthedocs.io
+# Run by the `import-linter` pre-commit hook. Kept out of pyproject.toml
+# because pyproject-fmt collapses the contract tables onto one line.
+[importlinter]
+root_package = pytest_remaster
+# Needed so the forbidden contract below can see third-party imports (pandas).
+include_external_packages = True
+# TYPE_CHECKING-only imports never run, so they cannot create cycles or pull
+# in optional dependencies at import time.
+exclude_type_checking_imports = True
+
+[importlinter:contract:no-cycles]
+name = No circular imports
+type = acyclic_siblings
+ancestors =
+    pytest_remaster
+
+[importlinter:contract:layers]
+name = Helpers build on GoldenMaster, which builds on the leaf modules
+type = layers
+containers =
+    pytest_remaster
+layers =
+    factory | pandas_io | patching | plugin
+    golden_master
+    discovery | matchers
+
+[importlinter:contract:stdlib-pure-core]
+name = Only pandas_io may import pandas (the core stays stdlib-pure)
+type = forbidden
+source_modules =
+    pytest_remaster
+    pytest_remaster.discovery
+    pytest_remaster.factory
+    pytest_remaster.golden_master
+    pytest_remaster.matchers
+    pytest_remaster.patching
+    pytest_remaster.plugin
+# Checks each module itself, so ``pytest_remaster`` means ``__init__`` only.
+as_packages = False
+forbidden_modules =
+    pandas
+ignore_imports =
+    # Lazy re-export through ``__getattr__``: pandas is only imported on access.
+    pytest_remaster -> pytest_remaster.pandas_io

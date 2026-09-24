@@ -52,6 +52,21 @@ repos:
         pass_filenames: false
         types: [python]
         additional_dependencies: [ty, pytest>=7.0, pandas-stubs]
+      - id: import-linter
+        name: import-linter
+        # Contracts live in .importlinter. Declared local with language: python
+        # rather than pulling the upstream repo, whose hook is language: system
+        # and would need the dev extra installed. grimp reads the source
+        # statically, so no project dependency is needed; PYTHONPATH=src lets it
+        # find the package in the src layout. Version is pinned here, not by a
+        # rev, so `pre-commit autoupdate` won't move it: bump it by hand
+        # alongside the dev extra.
+        entry: env PYTHONPATH=src lint-imports
+        language: python
+        additional_dependencies: ["import-linter==2.15"]
+        pass_filenames: false
+        require_serial: true
+        types: [python]
   - repo: https://github.com/rbubley/mirrors-prettier
     rev: v3.9.9
     hooks:
