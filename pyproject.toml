@@ -25,6 +25,7 @@ classifiers = [
 dynamic = [ "version" ]
 dependencies = [ "pytest>=7" ]
 optional-dependencies.dev = [
+  "import-linter==2.15",
   "mypy",
   "pandas",
   "pandas-stubs",
