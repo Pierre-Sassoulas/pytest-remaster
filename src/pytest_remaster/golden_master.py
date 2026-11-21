@@ -6,7 +6,8 @@ import difflib
 import itertools
 import json
 import re
-from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
+import sys
+from collections.abc import Callable, Collection, Generator, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,6 +16,17 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 from pytest_remaster.discovery import CaseData
+from pytest_remaster.inline import (
+    InlineLine,
+    find_inline_lines,
+    has_expectation,
+    inline_changes,
+    inline_keys,
+    inline_pattern,
+    read_lines,
+    rewrite_lines,
+    write_lines,
+)
 
 if TYPE_CHECKING:
     from _pytest.config import Config
@@ -97,6 +109,35 @@ def mock_calls_serializer(name: str) -> Callable[[Any], str]:
         return "\n".join(lines)
 
     return _serialize
+
+
+def _placeholder_pairs(placeholders: Mapping[str, str] | None) -> list[tuple[str, str]]:
+    """Return ``(marker, value)`` pairs, longest value first.
+
+    Longest first, so a value never hides a longer one it is part of
+    (a home directory inside a project directory).
+    """
+    if not placeholders:
+        return []
+    if empty := [name for name, value in placeholders.items() if not value]:
+        msg = f"placeholders need a value to look for, {empty} have none"
+        raise ValueError(msg)
+    ordered = sorted(placeholders.items(), key=lambda item: len(item[1]), reverse=True)
+    return [(f"{{{{ {name} }}}}", value) for name, value in ordered]
+
+
+def _hide_dynamic(text: str, placeholders: Mapping[str, str] | None) -> str:
+    """Replace every dynamic value in *text* by its ``{{ name }}`` marker."""
+    for marker, value in _placeholder_pairs(placeholders):
+        text = text.replace(value, marker)
+    return text
+
+
+def _show_dynamic(text: str, placeholders: Mapping[str, str] | None) -> str:
+    """Replace every ``{{ name }}`` marker in *text* by its current value."""
+    for marker, value in _placeholder_pairs(placeholders):
+        text = text.replace(marker, value)
+    return text
 
 
 def _build_override_chain(base: str | Path, **dimensions: str) -> list[Path]:
@@ -248,7 +289,7 @@ class GoldenMaster:
         self._mismatches: list[str] = []
 
     @contextmanager
-    def collecting(self) -> Iterator[None]:
+    def collecting(self) -> Generator[None]:
         """Defer mismatch failures and report them all at exit.
 
         Inside the context, a failing ``check()`` records its failure
@@ -317,6 +358,7 @@ class GoldenMaster:
         deserializer: Callable[[str], Any] | None = None,
         matcher: Callable[[Any, Any], bool] | None = None,
         roundtrip: bool = False,
+        placeholders: Mapping[str, str] | None = None,
     ) -> None:
         """Compare one actual value against one expected file.
 
@@ -347,6 +389,11 @@ class GoldenMaster:
                 matcher instead of the raw actual value, so both sides carry
                 the storage precision and serialization rounding can never
                 trip a tight tolerance. Requires *matcher* and *deserializer*.
+            placeholders: Mapping of a name to a value that changes from
+                one machine or run to the next (a temporary directory, a
+                home directory). The value is written to the expected
+                file as ``{{ name }}``, and read back as the current
+                value, so the file is the same everywhere.
 
         """
         expected_path = Path(expected_path)
@@ -360,7 +407,6 @@ class GoldenMaster:
         )
 
         chain = self._resolve_chain(expected_path, override_path, dimensions)
-        split = self._split_keys(dimensions)
         actual_value, actual_str = self._resolve_actual(
             actual, expected_path, serializer
         )
@@ -369,15 +415,34 @@ class GoldenMaster:
             actual_value = deserializer(actual_str)
         self._check_resolved(
             actual_value,
-            actual_str,
+            _hide_dynamic(actual_str, placeholders),
             expected_path,
             chain,
             dimensions=dimensions,
-            split=split,
+            split=self._split_keys(dimensions),
             normalizer=normalizer,
-            deserializer=deserializer,
+            deserializer=self._reading_dynamic(deserializer, matcher, placeholders),
             matcher=matcher,
         )
+
+    @staticmethod
+    def _reading_dynamic(
+        deserializer: Callable[[str], Any] | None,
+        matcher: Callable[[Any, Any], bool] | None,
+        placeholders: Mapping[str, str] | None,
+    ) -> Callable[[str], Any] | None:
+        """Return a deserializer putting the current dynamic values back.
+
+        A matcher compares values, so it must not see ``{{ name }}`` markers.
+        """
+        if matcher is None or not placeholders:
+            return deserializer
+
+        def _deserialize(text: str) -> Any:
+            text = _show_dynamic(text, placeholders)
+            return deserializer(text) if deserializer else text
+
+        return _deserialize
 
     def _split_keys(self, dimensions: dict[str, str] | None) -> set[str] | None:
         """Return the dimension names to split on for this check, if any."""
@@ -555,6 +620,7 @@ class GoldenMaster:
         deserializer: Callable[[str], Any] | None = None,
         matcher: Callable[[Any, Any], bool] | None = None,
         roundtrip: bool = False,
+        placeholders: Mapping[str, str] | None = None,
     ) -> None:
         """Run a function on a case and check named outputs.
 
@@ -570,6 +636,7 @@ class GoldenMaster:
             deserializer: Optional parser for expected file text. See check().
             matcher: Optional comparison hook. See check().
             roundtrip: Round-trip actual through storage. See check().
+            placeholders: Dynamic values stored as ``{{ name }}``. See check().
 
         The shared keyword arguments are defaults; an :class:`Output` that
         sets any comparison field (normalizer, deserializer, matcher,
@@ -583,8 +650,7 @@ class GoldenMaster:
                 f"{case.input} — {exc.filename or exc}\n"
                 f"  (directory was discovered as a test case but appears malformed)"
             ) from exc
-        for suffix, spec in extractors.items():
-            output = spec if isinstance(spec, Output) else Output(extract=spec)
+        for suffix, output in self._outputs(extractors):
             overrides = output.overrides_comparison()
             self.check(
                 output.extract(result),
@@ -594,7 +660,120 @@ class GoldenMaster:
                 deserializer=output.deserializer if overrides else deserializer,
                 matcher=output.matcher if overrides else matcher,
                 roundtrip=bool(output.roundtrip) if overrides else roundtrip,
+                placeholders=placeholders,
             )
+
+    def check_inline(
+        self,
+        path: str | Path,
+        extractors: Mapping[str, Callable[..., Any]] | Callable[[Any, str], Any],
+        *,
+        key_pattern: str | None = None,
+        runner: Callable[[InlineLine], Any] | None = None,
+        serializer: Callable[[Any], str] = str,
+        comment: str = "#",
+        version: tuple[int, ...] = sys.version_info[:3],
+        placeholders: Mapping[str, str] | None = None,
+    ) -> None:
+        """Compare actual values against expectations written in the input file.
+
+        The expectations live in comments of the file under test, next to
+        what they describe, instead of in a separate expected file::
+
+            2 + 3  # total: 5
+            4 * 2  # total: 8
+
+        ::
+
+            golden_master.check_inline(path, {"total": lambda line: eval(line.code)})
+
+        Every ``# <key>: <value>`` comment whose key is in *extractors* is
+        one expectation. On mismatch, remaster mode rewrites the comment in
+        place, so writing ``# total:`` with no value is enough to add a
+        new expectation.
+
+        Args:
+            path: The input file holding the expectation comments.
+            extractors: Mapping of comment key to a function returning the
+                actual value for a line. It receives the result of
+                *runner*, or the :class:`InlineLine` when there is no
+                runner. One line may carry several keys. A comment may
+                give the key an argument, ``# size(cm): 5``: the function
+                then receives it as a second positional argument, as text.
+                With *key_pattern*, give one function instead of a
+                mapping: it receives the result and the key.
+            key_pattern: Regular expression of what a key looks like, for
+                keys that cannot be listed in advance (a path such as
+                ``leaves[0].color``). A comment then only counts after
+                some code on the same line, or when it points at another
+                line.
+            runner: Optional callable run once per annotated line; its
+                result is given to every extractor of that line.
+            serializer: Converts each value to string. Default: str().
+                The result must fit on one line.
+            comment: The comment marker of the input file. Default: ``#``.
+            version: The version that conditional expectations are read
+                against. Default: the running interpreter. An expectation
+                may start with a condition, ``# >=3.14: total: 5`` (one of
+                ``>``, ``<``, ``>=``, ``<=``); it is checked and rewritten
+                only when the condition holds, so one line can say
+                something different for old and new versions.
+            placeholders: Dynamic values stored as ``{{ name }}``. See check().
+
+        A comment may be about another line than its own: ``# +1: total: 5``
+        is about the next line, ``# -2: total: 5`` about the line two
+        above, ``# 12: total: 5`` about line 12. A long list of
+        expectations can then be written above its line, one per line.
+
+        Raises:
+            MalformedTestCase: The file has no expectation comment, so the
+                test would check nothing.
+
+        """
+        path = Path(path)
+        pattern = inline_pattern(extractors, key_pattern, comment)
+        lines = read_lines(path)
+        if not has_expectation(lines, pattern, key_pattern is not None):
+            raise MalformedTestCase(
+                f"{path} — no inline expectation found (looked for "
+                + inline_keys(extractors, key_pattern, comment)
+                + ")"
+            )
+        changed = inline_changes(
+            find_inline_lines(path, lines, pattern, version, key_pattern is not None),
+            extractors,
+            runner,
+            lambda value: _hide_dynamic(serializer(value), placeholders),
+        )
+        if not changed:
+            return
+        mismatches = [
+            f"{path}:{lineno}: {label}: expected {expected!r}, got {actual!r}"
+            for (lineno, label), (expected, actual) in changed.items()
+        ]
+        if self._remaster:
+            actuals = {key: actual for key, (_, actual) in changed.items()}
+            write_lines(
+                path,
+                rewrite_lines(
+                    lines, pattern, version, actuals, key_pattern is not None
+                ),
+            )
+            self._updated.extend(f"updated: {mismatch}" for mismatch in mismatches)
+        else:
+            self._fail(
+                f"Mismatch at {path}:\n"
+                + "\n".join(mismatches)
+                + f"\nRun with --remaster to update {path}."
+            )
+
+    @staticmethod
+    def _outputs(
+        extractors: Mapping[str, Callable[[Any], Any] | Output],
+    ) -> Iterator[tuple[str, Output]]:
+        """Yield every suffix with its spec, bare extractors wrapped."""
+        for suffix, spec in extractors.items():
+            yield suffix, spec if isinstance(spec, Output) else Output(extract=spec)
 
     @staticmethod
     def _output_path(
@@ -727,6 +906,7 @@ class GoldenMaster:
         deserializer: Callable[[str], Any] | None = None,
         matcher: Callable[[Any, Any], bool] | None = None,
         roundtrip: bool = False,
+        placeholders: Mapping[str, str] | None = None,
         suffix: str = "",
     ) -> None:
         """Compare multiple actuals against expected_0, expected_1, ... files.
@@ -739,6 +919,7 @@ class GoldenMaster:
             deserializer: Optional parser for expected file text. See check().
             matcher: Optional comparison hook. See check().
             roundtrip: Round-trip actual through storage. See check().
+            placeholders: Dynamic values stored as ``{{ name }}``. See check().
             suffix: File extension (e.g. ``".json"``, ``".txt"``).
 
         """
@@ -753,16 +934,7 @@ class GoldenMaster:
                     f" but appears malformed)"
                 ) from exc
 
-        pattern = rf"expected_\d+{re.escape(suffix)}$"
-
-        def _index(path: Path) -> int:
-            match = re.search(r"\d+", path.name)
-            assert match is not None  # every name matched the \d+ pattern above
-            return int(match.group())
-
-        existing = sorted(
-            (p for p in directory.iterdir() if re.match(pattern, p.name)), key=_index
-        )
+        existing = self._existing_expected(directory, suffix)
 
         for i, actual in enumerate(actuals):
             self.check(
@@ -773,9 +945,24 @@ class GoldenMaster:
                 deserializer=deserializer,
                 matcher=matcher,
                 roundtrip=roundtrip,
+                placeholders=placeholders,
             )
 
         self._trim_extra_expected(len(actuals), existing)
+
+    @staticmethod
+    def _existing_expected(directory: Path, suffix: str) -> list[Path]:
+        """Return the expected_N files of *directory*, in index order."""
+        pattern = rf"expected_\d+{re.escape(suffix)}$"
+
+        def _index(path: Path) -> int:
+            match = re.search(r"\d+", path.name)
+            assert match is not None  # every name matched the \d+ pattern above
+            return int(match.group())
+
+        return sorted(
+            (p for p in directory.iterdir() if re.match(pattern, p.name)), key=_index
+        )
 
     def _trim_extra_expected(self, count: int, existing: list[Path]) -> None:
         """Delete (remaster) or report expected files beyond *count*."""

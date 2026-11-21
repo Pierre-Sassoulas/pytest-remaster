@@ -129,6 +129,118 @@ def test_cli(
     )
 ```
 
+## Example 4: expectations inside the input file
+
+When each line of an input has its own small answer, a separate expected file makes you
+jump between two files. `check_inline` keeps the answer in a comment at the end of the
+line it is about:
+
+```
+tests/sums.txt
+```
+
+```
+2 + 3  # total: 5
+4 * 2  # total: 8
+```
+
+```python
+from pathlib import Path
+
+from pytest_remaster import GoldenMaster, InlineLine
+
+SUMS = Path(__file__).parent / "sums.txt"
+
+
+def total(line: InlineLine) -> int:
+    return eval(line.code)  # line.code is the text before the comment: "2 + 3"
+
+
+def test_sums(golden_master: GoldenMaster) -> None:
+    golden_master.check_inline(SUMS, {"total": total})
+```
+
+Each key of the mapping is a comment to look for (`# total:`), and its function returns
+the actual value for one line. A wrong comment fails the test, and `--remaster` rewrites
+it in place. To add a new line, write the comment without a value (`7 - 1  # total:`)
+and run the tests: the answer is filled in for you to review.
+
+A line can carry several keys, and `runner=` computes something once per line for all of
+them:
+
+```
+apple  # size: 5  # shout: APPLE
+```
+
+```python
+golden_master.check_inline(
+    WORDS,
+    {"size": len, "shout": str.upper},
+    runner=lambda line: line.code,  # every function receives what the runner returns
+)
+```
+
+A key can take an argument between parentheses. The function receives it, as text, in a
+second parameter:
+
+```
+banana  # count(a): 3  # count(n): 2
+```
+
+```python
+def count(line: InlineLine, letter: str) -> int:
+    return line.code.count(letter)
+
+
+golden_master.check_inline(FRUITS, {"count": count})
+```
+
+When the keys cannot be listed in advance — a path into a result, like `leaves[0].color`
+— give one function and say what a key looks like with `key_pattern=` (a regular
+expression). The function receives the key:
+
+```
+apple  # color: red  # leaves[0].color: green
+```
+
+```python
+golden_master.check_inline(TREE, follow, key_pattern=r"[a-z]+[a-z0-9.\[\]]*")
+```
+
+With a pattern, a comment only counts after some code on the same line, so an ordinary
+`# note: ...` on its own line is left alone.
+
+`InlineLine` has the `path`, the `lineno` (starting at 1), the `code` before the
+comments and the `expected` values by key. Other options: `serializer=` (default `str`;
+the result must fit on one line) and `comment=` for files that do not use `#` (e.g.
+`comment="//"`). A file without any expectation raises `MalformedTestCase`, so a test
+never passes by checking nothing.
+
+An expectation can depend on the Python version, with a condition before the key (`>`,
+`<`, `>=` or `<=`):
+
+```
+2 + 3  # <3.14: total: 5  # >=3.14: total: 6
+```
+
+Only the expectations whose condition holds for the running interpreter are checked, and
+`--remaster` only rewrites those: it never touches a value it could not verify. Pass
+`version=` to compare against something else than `sys.version_info`.
+
+A comment can be about another line than its own, with the line before the key: `+1` is
+the next line, `-1` the line above, a bare number is that line of the file. A long list
+of expectations then fits above its line:
+
+```
+# +2: leaves[0].color: green
+# +1: leaves[1].color: brown
+apple  # color: red
+```
+
+`tests/demo_astroid/` uses this for functional tests of a type inference engine: the
+runner finds the syntax node on the line, and the comments say what must be inferred for
+it (`Cat().speak()  # inferred: Const('meow')`).
+
 All examples auto-update expected files on mismatch. Review the diff in git, rerun. Pass
 `--no-remaster` for strict comparison.
 
@@ -335,6 +447,31 @@ def test_scenarios(golden_master: GoldenMaster) -> None:
 
 Remaster mode is unaffected: it already aggregates, updating every file and reporting
 them all at fixture teardown.
+
+## Values that change between machines with `placeholders`
+
+Some outputs contain a value that is different on every machine or every run: a
+temporary directory, a home directory. Written as it is, the expected file would only
+pass where it was made. Give the value a name, and it is stored as `{{ name }}`:
+
+```python
+def test_basket(golden_master: GoldenMaster, tmp_path: Path) -> None:
+    golden_master.check(
+        f"apples are in {tmp_path}/basket",
+        Path(__file__).parent / "expected.txt",
+        placeholders={"tmp": str(tmp_path)},
+    )
+```
+
+```
+apples are in {{ tmp }}/basket
+```
+
+When reading the file, `{{ tmp }}` stands for the current value, so the same file passes
+everywhere. With several placeholders, the longest value is replaced first, so a
+directory inside another one keeps its own name. `placeholders=` is accepted by
+`check()`, `check_all()`, `check_each()` and `check_inline()`; a `matcher` receives the
+expected value with the current values put back.
 
 ## Version-specific expected files with `dimensions`
 

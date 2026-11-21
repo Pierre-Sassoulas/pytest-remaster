@@ -11,6 +11,8 @@ regeneration.
   `discover_test_files`
 - `src/pytest_remaster/golden_master.py` — `GoldenMaster`, `MalformedTestCase`,
   normalizers
+- `src/pytest_remaster/inline.py` — `InlineLine`, parsing and rewriting of
+  `# key: value` expectation comments
 - `src/pytest_remaster/matchers.py` — `tolerance_matcher`
 - `src/pytest_remaster/pandas_io.py` — `dataframe_serializer`, `dataframe_deserializer`
   (requires the `pandas` extra; lazily exported via `__getattr__` in `__init__.py` so
@@ -27,11 +29,15 @@ regeneration.
 - `tests/test_collecting.py` — Tests for collecting() failure aggregation (via pytester)
 - `tests/test_factory.py` — Tests for golden_case_test (via pytester)
 - `tests/test_output_spec.py` — Tests for the Output spec in check_each (via pytester)
+- `tests/test_inline.py` — Tests for check_inline (via pytester)
+- `tests/test_placeholders.py` — Tests for placeholders= (via pytester)
 - `tests/test_pandas_io.py` — Tests for pandas helpers (importorskip pandas)
 - `tests/test_tolerance_matcher.py` — Tests for tolerance_matcher (direct calls; it is a
   pure function, pytester only for the fixture integration test)
 - `tests/demo/` — Demo chatbot app exercising the framework end-to-end
 - `tests/demo_subprocess/` — Demo CLI app with capsys/caplog capture
+- `tests/demo_astroid/` — Demo astroid functional tests: inferred type/value written in
+  comments of the analysed `.py` files (`check_inline`)
 
 ## Public API
 
@@ -48,6 +54,21 @@ regeneration.
   by default
   - `collecting()` — context manager deferring strict-mode failures; reports all
     mismatches in one failure at the outermost exit (re-entrant)
+  - `check_inline(path, extractors, key_pattern=, runner=, serializer=, comment=, version=)`
+    — expectations stored in the input file as `# key: value` comments; each extractor
+    returns the actual value for an `InlineLine` (or for the runner's result); remaster
+    rewrites the comments in place, an empty `# key:` gets filled
+    - `# key(argument): value` — the extractor receives the argument (text) as a second
+      positional parameter
+    - `key_pattern=` + one `(result, key)` function instead of a mapping — open keys
+      (paths); comments then only count after code on the same line
+    - `# >=3.14: key: value` — per-line version condition (`>`, `<`, `>=`, `<=` against
+      `version=`, default `sys.version_info`); other versions' values are never checked
+      nor rewritten
+    - `# +1: key: value` — the comment is about another line (`+n`/`-n` relative, bare
+      number absolute), as in pylint's functional tests
+  - `placeholders={"name": value}` — on every check method: a machine-dependent value is
+    written as `{{ name }}` and read back as the current value (longest value first)
 - `Output` — per-suffix spec for `check_each()`: extract + own
   serializer/normalizer/deserializer/matcher/roundtrip + `name` override (str or
   callable receiving CaseData); comparison fields override the shared kwargs as a unit
