@@ -141,7 +141,7 @@ tests/sums.txt
 
 ```
 2 + 3  # total: 5
-4 * 2  # total: 8
+4 + 4  # total: 8
 ```
 
 ```python
@@ -153,7 +153,8 @@ SUMS = Path(__file__).parent / "sums.txt"
 
 
 def total(line: InlineLine) -> int:
-    return eval(line.code)  # line.code is the text before the comment: "2 + 3"
+    # line.code is the text before the comment: "2 + 3"
+    return sum(int(number) for number in line.code.split("+"))
 
 
 def test_sums(golden_master: GoldenMaster) -> None:
@@ -162,7 +163,7 @@ def test_sums(golden_master: GoldenMaster) -> None:
 
 Each key of the mapping is a comment to look for (`# total:`), and its function returns
 the actual value for one line. A wrong comment fails the test, and `--remaster` rewrites
-it in place. To add a new line, write the comment without a value (`7 - 1  # total:`)
+it in place. To add a new line, write the comment without a value (`6 + 1  # total:`)
 and run the tests: the answer is filled in for you to review.
 
 A line can carry several keys, and `runner=` computes something once per line for all of

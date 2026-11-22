@@ -681,11 +681,14 @@ class GoldenMaster:
         what they describe, instead of in a separate expected file::
 
             2 + 3  # total: 5
-            4 * 2  # total: 8
+            4 + 4  # total: 8
 
         ::
 
-            golden_master.check_inline(path, {"total": lambda line: eval(line.code)})
+            def total(line):
+                return sum(int(number) for number in line.code.split("+"))
+
+            golden_master.check_inline(path, {"total": total})
 
         Every ``# <key>: <value>`` comment whose key is in *extractors* is
         one expectation. On mismatch, remaster mode rewrites the comment in
