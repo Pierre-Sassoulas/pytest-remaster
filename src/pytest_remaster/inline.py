@@ -37,9 +37,13 @@ class InlineLine:
 
 
 def read_lines(path: Path) -> list[str]:
-    """Return the lines of *path* with their line endings untouched."""
+    r"""Return the lines of *path* with their line endings untouched.
+
+    Only ``\n``, ``\r`` and ``\r\n`` end a line, as for Python and for
+    editors: ``str.splitlines`` would also cut on a form feed.
+    """
     with path.open(encoding="utf-8", newline="") as stream:
-        return stream.read().splitlines(keepends=True)
+        return stream.readlines()
 
 
 def write_lines(path: Path, lines: list[str]) -> None:
@@ -103,7 +107,11 @@ def split_label(label: str) -> tuple[str, str | None]:
 
 
 def _applies(match: re.Match[str], version: tuple[int, ...]) -> bool:
-    """Whether the expectation of *match* is written for *version*."""
+    """Whether the expectation of *match* is written for *version*.
+
+    *version* is cut to the precision of the condition: ``3.14`` is about
+    every 3.14.x, so ``<=3.14`` holds on 3.14.2 and ``>3.14`` does not.
+    """
     if match["version"] is None:
         return True
     if match["op"] not in _OPERATORS:
@@ -113,7 +121,7 @@ def _applies(match: re.Match[str], version: tuple[int, ...]) -> bool:
         )
         raise ValueError(msg)
     required = tuple(int(part) for part in match["version"].split("."))
-    return bool(_OPERATORS[match["op"]](version, required))
+    return bool(_OPERATORS[match["op"]](version[: len(required)], required))
 
 
 def _target(match: re.Match[str], lineno: int) -> int:
@@ -189,7 +197,10 @@ def find_inline_lines(
 def _rewrite_line(
     raw: str, matches: list[re.Match[str]], lineno: int, actual: Mapping[Any, str]
 ) -> str:
-    """Return *raw* with the values of *matches* found in *actual* replaced."""
+    """Return *raw* with the values of *matches* found in *actual* replaced.
+
+    Nothing else changes, trailing whitespace included.
+    """
     text = raw.rstrip("\r\n")
     ending = raw[len(text) :]
     for match in reversed(matches):
@@ -201,7 +212,7 @@ def _rewrite_line(
             + (f" {actual[key]}" if actual[key] else "")
             + (f"  {after}" if after else "")
         )
-    return f"{text.rstrip()}{ending}"
+    return f"{text}{ending}"
 
 
 def rewrite_lines(
@@ -269,9 +280,14 @@ def inline_actuals(
 
 
 def inline_value(value: str, line: InlineLine) -> str:
-    """Return *value* ready to be written in a comment of *line*."""
+    r"""Return *value* ready to be written in a comment of *line*.
+
+    Every character ending a line in some language is refused (a form
+    feed, ``\u2028`` in JavaScript), not only ``\n``: the value would
+    otherwise leave its comment and become code of the input file.
+    """
     value = value.strip()
-    if "\n" in value or "\r" in value:
+    if len(value.splitlines()) > 1:
         msg = (
             f"{line.path}:{line.lineno}: an inline expectation must fit"
             f" on one line, got {value!r}"
