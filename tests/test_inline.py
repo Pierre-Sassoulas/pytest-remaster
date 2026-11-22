@@ -439,3 +439,71 @@ def test_comment_pointing_outside_the_file_is_an_error(
     result = pytester.runpytest("--no-remaster")
     result.assert_outcomes(failed=1)
     result.stdout.fnmatch_lines(["*ValueError: *sums.txt:2: *points at line 3*"])
+
+
+def test_version_condition_is_as_precise_as_written(pytester: pytest.Pytester) -> None:
+    """``3.13`` is about every 3.13.x: a patch release is not above it."""
+    content = "2 + 3  # <=3.13: total: 5  # >3.13: total: 6\n"
+    _write(pytester, "sums.txt", content)
+    pytester.makepyfile(TEST_VERSIONED_SUMS.format(version=(3, 13, 5)))
+    pytester.runpytest("--no-remaster").assert_outcomes(passed=1)
+    pytester.makepyfile(TEST_VERSIONED_SUMS.format(version=(3, 14, 0)))
+    result = pytester.runpytest("--no-remaster")
+    result.assert_outcomes(failed=1)
+    result.stdout.fnmatch_lines(["*sums.txt:1: total: expected '6', got '5'"])
+
+
+def test_version_condition_with_a_patch_number(pytester: pytest.Pytester) -> None:
+    """A condition may go down to the patch release."""
+    _write(pytester, "sums.txt", "2 + 3  # <3.14.2: total: 5  # >=3.14.2: total: 6\n")
+    pytester.makepyfile(TEST_VERSIONED_SUMS.format(version=(3, 14, 1)))
+    pytester.runpytest("--no-remaster").assert_outcomes(passed=1)
+
+
+def test_remaster_keeps_trailing_whitespace(pytester: pytest.Pytester) -> None:
+    """The lines remaster has nothing to say about are kept as they are."""
+    sums = _write(
+        pytester,
+        "sums.txt",
+        "two spaces  \n   \n2 + 3  # total: 6\n4 + 4  # total: 8  \n",
+    )
+    pytester.makepyfile(TEST_SUMS)
+    pytester.runpytest("--remaster").assert_outcomes(passed=1, errors=1)
+    assert sums.read_text() == (
+        "two spaces  \n   \n2 + 3  # total: 5\n4 + 4  # total: 8  \n"
+    )
+
+
+def test_form_feed_does_not_end_a_line(pytester: pytest.Pytester) -> None:
+    """Lines are counted as an editor counts them, and a form feed survives."""
+    sums = _write(pytester, "sums.txt", "apple \x0c banana\n2 + 3  # total: 6\n")
+    pytester.makepyfile(TEST_SUMS)
+    result = pytester.runpytest("--no-remaster")
+    result.assert_outcomes(failed=1)
+    result.stdout.fnmatch_lines(["*sums.txt:2: total: expected '6', got '5'"])
+    pytester.runpytest("--remaster").assert_outcomes(passed=1, errors=1)
+    assert sums.read_text() == "apple \x0c banana\n2 + 3  # total: 5\n"
+
+
+@pytest.mark.parametrize("separator", ["\\x0c", "\\x85", "\\u2028", "\\u2029"])
+def test_value_cannot_leave_its_comment(
+    pytester: pytest.Pytester, separator: str
+) -> None:
+    """A line separator of another language is refused like a newline."""
+    fruits = _write(pytester, "fruits.js", "apple // size: 5\n")
+    pytester.makepyfile(
+        f"""
+        from pathlib import Path
+
+        def test_fruits(golden_master):
+            golden_master.check_inline(
+                Path(__file__).parent / "fruits.js",
+                {{"size": lambda line: "5{separator}eat(apple)"}},
+                comment="//",
+            )
+        """
+    )
+    result = pytester.runpytest("--remaster")
+    result.assert_outcomes(failed=1)
+    result.stdout.fnmatch_lines(["*ValueError: *must fit on one line*"])
+    assert fruits.read_text() == "apple // size: 5\n"

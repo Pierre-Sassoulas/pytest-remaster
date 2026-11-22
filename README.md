@@ -226,7 +226,8 @@ An expectation can depend on the Python version, with a condition before the key
 
 Only the expectations whose condition holds for the running interpreter are checked, and
 `--remaster` only rewrites those: it never touches a value it could not verify. Pass
-`version=` to compare against something else than `sys.version_info`.
+`version=` to compare against something else than `sys.version_info`. A condition is as
+precise as it is written: `3.14` is about every 3.14.x, so `<=3.14` holds on 3.14.2.
 
 A comment can be about another line than its own, with the line before the key: `+1` is
 the next line, `-1` the line above, a bare number is that line of the file. A long list
