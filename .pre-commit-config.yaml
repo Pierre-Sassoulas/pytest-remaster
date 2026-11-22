@@ -29,12 +29,14 @@ repos:
         language: system
         args: ["-sn", "-rn", "--enable-all-extensions"]
         types: [python]
+        # Code analysed by the demo, wrong on purpose in places.
+        exclude: "tests/demo_astroid/cases/"
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v2.3.1
     hooks:
       - id: mypy
         args: ["--strict"]
-        exclude: "tests/demo_pylint/platform_checker\\.py"
+        exclude: "tests/demo_pylint/platform_checker\\.py|tests/demo_astroid/cases/"
         additional_dependencies: [pytest>=7.0, pandas-stubs]
   - repo: https://github.com/RobertCraigie/pyright-python
     rev: v1.1.414

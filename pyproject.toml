@@ -75,6 +75,12 @@ lint.ignore = [
   "PLC0415", # import-outside-toplevel
   "PLR0913", # too-many-arguments
 ]
+lint.per-file-ignores."tests/demo_astroid/cases/*.py" = [
+  "B015", # the cases are bare expressions whose inference is checked
+  "B018", # same
+  "D102", # the cases are as short as possible
+  "F821", # undefined names are inferred on purpose
+]
 lint.per-file-ignores."tests/demo_pylint/platform_checker.py" = [
   "D102",   # pylint checker methods don't need docstrings
   "D401",   # pylint register() docstring is conventional

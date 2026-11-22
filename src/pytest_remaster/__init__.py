@@ -14,6 +14,7 @@ from pytest_remaster.golden_master import (
     resolve_with_override,
     whitespace_normalizer,
 )
+from pytest_remaster.inline import InlineLine
 from pytest_remaster.matchers import Tolerance, ToleranceSpec, tolerance_matcher
 from pytest_remaster.patching import PatchRegistry
 
@@ -27,6 +28,7 @@ if TYPE_CHECKING:
 __all__ = [
     "CaseData",
     "GoldenMaster",
+    "InlineLine",
     "MalformedTestCase",
     "Output",
     "PatchRegistry",
